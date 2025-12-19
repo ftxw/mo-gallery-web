@@ -254,8 +254,8 @@ export default function Gallery() {
                       <span>评论 ({selectedPhoto.comments?.length || 0})</span>
                     </div>
                     <div className="space-y-3">
-                      {selectedPhoto.comments?.length > 0 ? (
-                        selectedPhoto.comments.map((comment, i) => (
+                      {(selectedPhoto.comments ?? []).length > 0 ? (
+                        (selectedPhoto.comments ?? []).map((comment, i) => (
                           <div key={i} className="bg-muted/30 p-4 rounded-xl border border-border/50">
                             <p className="text-xs font-bold mb-1">{comment.user}</p>
                             <p className="text-sm text-muted-foreground">{comment.content}</p>

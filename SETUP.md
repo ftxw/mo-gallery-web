@@ -1,83 +1,56 @@
-# 登录功能设置指南
+# 前端对接后端设置指南
 
-## 已完成功能
+本项目为纯前端（Next.js 静态导出），通过 `NEXT_PUBLIC_API_URL` 访问外部后端。
 
-✅ 前端对接外部后端 (登录/注册)
-✅ 前端登录页面
-✅ 认证上下文和状态管理
-✅ 导航栏登录/退出按钮
-✅ 管理后台路由保护
+## 1. 配置后端地址
 
-## 配置外部后端
+在 `.env.local` 中配置外部后端地址（必须）：
 
-1. 在 `.env` 中配置外部后端地址（必须）：
 ```env
-NEXT_PUBLIC_API_URL="http://localhost:8080"
+NEXT_PUBLIC_API_URL="http://localhost:8787"
 ```
 
-2. 确保外部后端已实现并开放以下接口（需要 CORS 允许前端域名）：
+## 2. 后端需要提供的接口
+
+（需后端开启 CORS 允许前端域名）
+
+### 公共接口
+
+- `GET /api/photos`（Query: `category` / `limit`）
+- `GET /api/photos/featured`
+- `GET /api/categories`
+
+### 认证接口
+
 - `POST /api/auth/login`
-- `POST /api/auth/register`
-
-## 创建管理员账号
-
-使用 curl 或 Postman 调用外部后端注册 API（将 `BASE_URL` 替换为 `NEXT_PUBLIC_API_URL`）：
-```bash
-BASE_URL="http://localhost:8080"
-curl -X POST $BASE_URL/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","password":"admin123","name":"Admin"}'
-```
-
-## 测试登录
-
-1. 启动开发服务器:
-```bash
-npm run dev
-```
-
-2. 访问 http://localhost:3000/login
-
-3. 使用创建的账号登录:
-   - 邮箱: `admin@example.com`
-   - 密码: `admin123`
-
-4. 登录成功后会跳转到 `/admin` 管理后台
-
-## 功能说明
-
-### 前端路由
-
-- `/login` - 登录页面
-- `/admin` - 管理后台 (需要登录)
-- 导航栏会根据登录状态显示不同内容
-
-### API 端点
-
-- `POST /api/auth/login` - 用户登录
-- `POST /api/auth/register` - 用户注册
-- 所有管理 API 需要在 Header 中携带 JWT token:
-  ```
-  Authorization: Bearer <token>
+  ```json
+  { "username": "admin", "password": "admin123" }
   ```
 
-### 认证流程
+### 管理端接口（需 Token）
 
-1. 用户在登录页面输入邮箱和密码
-2. 前端调用外部后端 `/api/auth/login` API
-3. 外部后端验证密码，返回 JWT token
-4. 前端将 token 存储在 localStorage
-5. 后续请求在 Header 中携带 token
-6. 受保护的路由会检查认证状态
+- `POST /api/admin/photos`（multipart/form-data: `file` / `title` / `category`）
+- `DELETE /api/admin/photos/:id`
+- `GET /api/admin/settings`
+- `PATCH /api/admin/settings`
 
-### 退出登录
+## 3. 本地验证流程
 
-- 点击导航栏的"退出"按钮
-- 或在管理后台侧边栏点击"退出登录"
-- 会清除 localStorage 中的 token 并跳转到首页
+1. 启动开发服务器：
+   ```bash
+   npm run dev
+   ```
+2. 访问：`http://localhost:3000/login`
+3. 输入后端提供的管理员账号（默认示例：`admin` / `admin123`）
+4. 登录成功后进入 `/admin`：
+   - 照片管理：拉取照片并支持删除
+   - 上传照片：上传到 `/api/admin/photos`
+   - 系统配置：读取与保存 `/api/admin/settings`
 
-## 安全建议
+## 4. Token 说明
 
-1. 外部后端务必使用 HTTPS
-2. 外部后端启用 CORS 白名单、Rate Limit 等安全策略
-3. 前端避免在 `NEXT_PUBLIC_*` 中存放任何敏感信息
+所有管理端请求需要在 Header 中携带：
+
+```
+Authorization: Bearer <token>
+```

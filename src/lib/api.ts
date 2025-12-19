@@ -12,50 +12,200 @@ function buildApiUrl(path: string): string {
   return `${getApiBase()}${normalizedPath}`
 }
 
+export class ApiUnauthorizedError extends Error {
+  readonly status = 401
+  constructor(message = 'Unauthorized') {
+    super(message)
+    this.name = 'ApiUnauthorizedError'
+  }
+}
+
+type ApiEnvelope<T> =
+  | { success: true; data: T }
+  | { success: true; token: string }
+  | { success: true }
+  | { success: false; message?: string; error?: string }
+
+function extractErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null
+  const anyPayload = payload as Record<string, unknown>
+  const message = anyPayload.message
+  if (typeof message === 'string' && message.trim()) return message
+  const error = anyPayload.error
+  if (typeof error === 'string' && error.trim()) return error
+  return null
+}
+
+async function readJsonSafe(res: Response): Promise<unknown> {
+  try {
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+async function apiRequest(
+  path: string,
+  init: RequestInit = {},
+  token?: string | null,
+): Promise<ApiEnvelope<unknown>> {
+  const headers = new Headers(init.headers)
+  const hasBody = init.body !== undefined && init.body !== null
+  if (hasBody && !headers.has('Content-Type') && !(init.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json')
+  }
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  const res = await fetch(buildApiUrl(path), { ...init, headers })
+  const payload = await readJsonSafe(res)
+
+  if (res.status === 401) {
+    throw new ApiUnauthorizedError(extractErrorMessage(payload) ?? 'Token invalid or expired')
+  }
+  if (!res.ok) {
+    throw new Error(extractErrorMessage(payload) ?? `Request failed (${res.status})`)
+  }
+
+  if (payload && typeof payload === 'object' && 'success' in payload) {
+    const envelope = payload as ApiEnvelope<unknown>
+    if ('success' in envelope && envelope.success === false) {
+      throw new Error(extractErrorMessage(payload) ?? 'Request failed')
+    }
+    return envelope
+  }
+
+  return { success: true, data: payload }
+}
+
+async function apiRequestData<T>(
+  path: string,
+  init: RequestInit = {},
+  token?: string | null,
+): Promise<T> {
+  const envelope = await apiRequest(path, init, token)
+  if (!('data' in envelope)) {
+    throw new Error('Unexpected API response (missing data)')
+  }
+  return envelope.data as T
+}
+
+function buildQuery(params: Record<string, string | number | undefined | null>): string {
+  const searchParams = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') continue
+    searchParams.set(key, String(value))
+  }
+  const query = searchParams.toString()
+  return query ? `?${query}` : ''
+}
+
+export interface PhotoDto {
+  id: string
+  title: string
+  category: string
+  url: string
+  thumbnail_url?: string
+  width: number
+  height: number
+  size?: number
+  isFeatured: boolean
+  createdAt: string
+}
+
+export interface AdminSettingsDto {
+  site_title: string
+  storage_provider: string
+  cdn_domain: string
+  r2_access_key_id?: string
+  r2_secret_access_key?: string
+  r2_bucket?: string
+  r2_endpoint?: string
+  github_token?: string
+  github_repo?: string
+  github_path?: string
+}
+
 export interface LoginRequest {
-  email: string
+  username: string
   password: string
 }
 
-export interface LoginResponse {
+export async function login(data: LoginRequest): Promise<string> {
+  const envelope = await apiRequest('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+  if (!('token' in envelope) || typeof envelope.token !== 'string') {
+    throw new Error('Unexpected login response (missing token)')
+  }
+  return envelope.token
+}
+
+export async function getCategories(): Promise<string[]> {
+  return apiRequestData<string[]>('/api/categories')
+}
+
+export async function getPhotos(params?: { category?: string; limit?: number }): Promise<PhotoDto[]> {
+  const category = params?.category && params.category !== '全部' ? params.category : undefined
+  const query = buildQuery({ category, limit: params?.limit })
+  return apiRequestData<PhotoDto[]>(`/api/photos${query}`)
+}
+
+export async function getFeaturedPhotos(): Promise<PhotoDto[]> {
+  return apiRequestData<PhotoDto[]>('/api/photos/featured')
+}
+
+export async function uploadPhoto(input: {
   token: string
-  user: {
-    id: string
-    email: string
-    name: string | null
-  }
+  file: File
+  title: string
+  category: string | string[]
+  storage_provider?: string
+  storage_path?: string
+}): Promise<PhotoDto> {
+  const form = new FormData()
+  form.set('file', input.file)
+  form.set('title', input.title)
+  const categoryValue = Array.isArray(input.category) ? input.category.join(',') : input.category
+  form.set('category', categoryValue)
+  if (input.storage_provider) form.set('storage_provider', input.storage_provider)
+  if (input.storage_path) form.set('storage_path', input.storage_path)
+
+  return apiRequestData<PhotoDto>(
+    '/api/admin/photos',
+    { method: 'POST', body: form },
+    input.token,
+  )
 }
 
-export interface ApiError {
-  error: string
+export async function deletePhoto(input: { token: string; id: string }): Promise<void> {
+  await apiRequest(`/api/admin/photos/${encodeURIComponent(input.id)}`, { method: 'DELETE' }, input.token)
 }
 
-export async function login(data: LoginRequest): Promise<LoginResponse> {
-  const res = await fetch(buildApiUrl('/api/auth/login'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-
-  if (!res.ok) {
-    const error: ApiError = await res.json()
-    throw new Error(error.error || 'Login failed')
-  }
-
-  return res.json()
+export async function getAdminSettings(token: string): Promise<AdminSettingsDto> {
+  return apiRequestData<AdminSettingsDto>('/api/admin/settings', {}, token)
 }
 
-export async function register(data: LoginRequest & { name?: string }) {
-  const res = await fetch(buildApiUrl('/api/auth/register'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
+export async function updateAdminSettings(
+  token: string,
+  patch: Partial<AdminSettingsDto>,
+): Promise<AdminSettingsDto> {
+  return apiRequestData<AdminSettingsDto>(
+    '/api/admin/settings',
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    },
+    token,
+  )
+}
 
-  if (!res.ok) {
-    const error: ApiError = await res.json()
-    throw new Error(error.error || 'Registration failed')
-  }
+export function resolveAssetUrl(assetPath: string, cdnDomain?: string): string {
+  if (/^https?:\/\//i.test(assetPath)) return assetPath
+  const normalizedPath = assetPath.startsWith('/') ? assetPath : `/${assetPath}`
 
-  return res.json()
+  const cdn = cdnDomain?.trim()
+  if (cdn) return `${cdn.replace(/\/+$/, '')}${normalizedPath}`
+
+  return `${getApiBase()}${normalizedPath}`
 }

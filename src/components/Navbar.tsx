@@ -2,17 +2,25 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Camera, LogOut } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { Camera, LogOut, Sun, Moon, Monitor } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/contexts/AuthContext'
+import { useTheme } from '@/contexts/ThemeContext'
 
 export default function Navbar() {
   const { isAuthenticated, logout, user } = useAuth()
+  const { theme, setTheme } = useTheme()
   const router = useRouter()
 
   const handleLogout = () => {
     logout()
     router.push('/')
+  }
+
+  const toggleTheme = () => {
+    if (theme === 'system') setTheme('light')
+    else if (theme === 'light') setTheme('dark')
+    else setTheme('system')
   }
 
   return (
@@ -39,13 +47,53 @@ export default function Navbar() {
               关于
             </Link>
 
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-full hover:bg-muted transition-colors relative group"
+              title={`当前模式: ${theme === 'system' ? '系统' : theme === 'light' ? '浅色' : '深色'}`}
+            >
+              <AnimatePresence mode="wait">
+                {theme === 'system' ? (
+                  <motion.div
+                    key="system"
+                    initial={{ opacity: 0, rotate: -90 }}
+                    animate={{ opacity: 1, rotate: 0 }}
+                    exit={{ opacity: 0, rotate: 90 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Monitor className="w-5 h-5 text-muted-foreground group-hover:text-primary" />
+                  </motion.div>
+                ) : theme === 'light' ? (
+                  <motion.div
+                    key="light"
+                    initial={{ opacity: 0, rotate: -90 }}
+                    animate={{ opacity: 1, rotate: 0 }}
+                    exit={{ opacity: 0, rotate: 90 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Sun className="w-5 h-5 text-amber-500" />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="dark"
+                    initial={{ opacity: 0, rotate: -90 }}
+                    animate={{ opacity: 1, rotate: 0 }}
+                    exit={{ opacity: 0, rotate: 90 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Moon className="w-5 h-5 text-indigo-400" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </button>
+
             {isAuthenticated ? (
               <>
                 <Link href="/admin" className="text-sm font-medium hover:text-primary transition-colors">
                   管理
                 </Link>
                 <div className="flex items-center space-x-4">
-                  <span className="text-sm text-muted-foreground">{user?.email}</span>
+                  <span className="text-sm text-muted-foreground">{user?.username}</span>
                   <button
                     onClick={handleLogout}
                     className="flex items-center space-x-1 text-sm font-medium hover:text-primary transition-colors"

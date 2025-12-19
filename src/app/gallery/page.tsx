@@ -1,270 +1,360 @@
 'use client'
 
-import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { X, Star, Info, MessageSquare, Camera, Palette } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { 
+  Calendar, 
+  Ruler, 
+  Star, 
+  X, 
+  LayoutGrid, 
+  StretchVertical, 
+  Clock, 
+  ZoomIn, 
+  ZoomOut,
+  Filter,
+  Maximize2,
+  HardDrive,
+  Loader2
+} from 'lucide-react'
+import { getCategories, getPhotos, resolveAssetUrl, type PhotoDto } from '@/lib/api'
 
-const categories = ['全部', '自然', '城市', '建筑', '人文', '星空']
+type ViewMode = 'grid' | 'masonry' | 'timeline'
 
-type PhotoComment = {
-  user: string
-  content: string
+function formatFileSize(bytes?: number): string {
+  if (!bytes) return '未知'
+  if (bytes === 0) return '0 Bytes'
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-type Photo = {
-  id: number
-  title: string
-  category: string
-  url: string
-  story?: string
-  rating: number
-  params?: Record<string, string>
-  palette?: string[]
-  comments?: PhotoComment[]
-}
-
-const photos: Photo[] = [
-  { 
-    id: 1, 
-    title: '山间晨雾', 
-    category: '自然', 
-    url: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=80',
-    story: '这张照片拍摄于川西四姑娘山的一个清晨。当第一缕阳光穿透云雾，远处的雪山若隐若现，空气中弥漫着泥土和冷杉的味道。',
-    rating: 5,
-    params: {
-      camera: 'Sony A7R IV',
-      lens: '24-70mm f/2.8 GM',
-      iso: '100',
-      shutter: '1/200s',
-      aperture: 'f/8.0'
-    },
-    palette: ['#2F4F4F', '#8FBC8F', '#F5F5DC', '#708090'],
-    comments: [
-      { user: '摄影迷', content: '构图太棒了，光影处理得恰到好处！' },
-      { user: '路人甲', content: '想知道具体的拍摄地点。' }
-    ]
-  },
-  { 
-    id: 2, 
-    title: '霓虹街头', 
-    category: '城市', 
-    url: 'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?auto=format&fit=crop&w=1200&q=80',
-    story: '雨后的东京街头，霓虹灯倒映在积水中，仿佛进入了一个赛博朋克的世界。',
-    rating: 4,
-    params: {
-      camera: 'Fujifilm X-T4',
-      lens: '35mm f/1.4',
-      iso: '800',
-      shutter: '1/60s',
-      aperture: 'f/2.0'
-    },
-    palette: ['#FF00FF', '#00FFFF', '#000033', '#FFFFFF'],
-    comments: [
-      { user: 'CityWalker', content: '色彩饱和度很高，很有氛围感。' }
-    ]
-  },
-  { 
-    id: 3, 
-    title: '现代几何', 
-    category: '建筑', 
-    url: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1200&q=80',
-    story: '线条与阴影的交织，展现了现代建筑的力量与纯粹。',
-    rating: 5,
-    params: {
-      camera: 'Canon EOS R5',
-      lens: '15-35mm f/2.8L',
-      iso: '100',
-      shutter: '1/500s',
-      aperture: 'f/11'
-    },
-    palette: ['#333333', '#CCCCCC', '#FFFFFF', '#1A1A1A'],
-    comments: []
-  },
-  { id: 4, title: '深山老林', category: '自然', url: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=800&q=80', rating: 4, story: '大自然的氧吧', params: { camera: 'Sony A7R', iso: '100' }, palette: ['#2d5a27', '#ffffff'], comments: [] },
-  { id: 5, title: '夕阳西下', category: '人文', url: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=800&q=80', rating: 5, story: '岁月的宁静', params: { camera: 'Sony A7R', iso: '100' }, palette: ['#ff8c00', '#ffffff'], comments: [] },
-  { id: 6, title: '银河璀璨', category: '星空', url: 'https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?auto=format&fit=crop&w=800&q=80', rating: 5, story: '宇宙的奥秘', params: { camera: 'Sony A7R', iso: '1000' }, palette: ['#000080', '#ffffff'], comments: [] },
-]
-
-export default function Gallery() {
+export default function GalleryPage() {
+  const [categories, setCategories] = useState<string[]>(['全部'])
   const [selectedCategory, setSelectedCategory] = useState('全部')
-  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [zoomLevel, setZoomLevel] = useState(3)
 
-  const filteredPhotos = selectedCategory === '全部' 
-    ? photos 
-    : photos.filter(p => p.category === selectedCategory)
+  const [photos, setPhotos] = useState<PhotoDto[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const [selectedPhoto, setSelectedPhoto] = useState<PhotoDto | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const data = await getCategories()
+        if (cancelled) return
+        setCategories(data.includes('全部') ? data : ['全部', ...data])
+      } catch (err) {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : '加载分类失败')
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setError('')
+    setLoading(true)
+    ;(async () => {
+      try {
+        const data = await getPhotos({ category: selectedCategory, limit: 100 })
+        if (cancelled) return
+        setPhotos(data)
+      } catch (err) {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : '加载照片失败')
+      } finally {
+        if (cancelled) return
+        setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedCategory])
+
+  const groupedPhotos = useMemo(() => {
+    if (viewMode !== 'timeline') return []
+    const groups: { title: string; photos: PhotoDto[] }[] = []
+    const sorted = [...photos].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    
+    sorted.forEach(photo => {
+      const date = new Date(photo.createdAt)
+      const title = `${date.getFullYear()}年${date.getMonth() + 1}月`
+      const lastGroup = groups[groups.length - 1]
+      if (lastGroup && lastGroup.title === title) {
+        lastGroup.photos.push(photo)
+      } else {
+        groups.push({ title, photos: [photo] })
+      }
+    })
+    return groups
+  }, [photos, viewMode])
+
+  const gridColsClass = useMemo(() => {
+    if (viewMode === 'masonry') return ''
+    switch (zoomLevel) {
+      case 1: return 'grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-2'
+      case 2: return 'grid-cols-3 sm:grid-cols-5 lg:grid-cols-8 gap-3'
+      case 3: return 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4'
+      case 4: return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6'
+      default: return 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4'
+    }
+  }, [zoomLevel, viewMode])
+
+  const masonryColsClass = useMemo(() => {
+    switch (zoomLevel) {
+      case 1: return 'columns-4 sm:columns-6 lg:columns-10 gap-2'
+      case 2: return 'columns-3 sm:columns-5 lg:columns-8 gap-3'
+      case 3: return 'columns-2 sm:columns-3 lg:columns-5 gap-4'
+      case 4: return 'columns-1 sm:columns-2 lg:columns-3 gap-6'
+      default: return 'columns-2 sm:columns-3 lg:columns-5 gap-4'
+    }
+  }, [zoomLevel])
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-12 sm:px-6 lg:px-8">
-      <div className="text-center mb-16">
-        <h1 className="text-4xl font-bold tracking-tight mb-4 text-foreground">相册展示</h1>
-        <p className="text-muted-foreground">在这里发现不同主题下的美妙瞬间</p>
+    <div className="max-w-[1600px] mx-auto px-4 py-8">
+      {/* Header */}
+      <div className="flex items-baseline justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">相册展示</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">共 {photos.length} 张摄影作品</p>
+        </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="flex flex-wrap justify-center gap-4 mb-12">
-        {categories.map(category => (
-          <button
-            key={category}
-            onClick={() => setSelectedCategory(category)}
-            className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${
-              selectedCategory === category
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-            }`}
-          >
-            {category}
-          </button>
-        ))}
-      </div>
-
-      {/* Grid */}
-      <motion.div 
-        layout
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
-      >
-        <AnimatePresence mode='popLayout'>
-          {filteredPhotos.map(photo => (
-            <motion.div
-              key={photo.id}
-              layout
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              whileHover={{ y: -5 }}
-              transition={{ duration: 0.3 }}
-              className="group relative overflow-hidden rounded-xl bg-muted aspect-square cursor-zoom-in"
-              onClick={() => setSelectedPhoto(photo)}
+      {/* Control Bar */}
+      <div className="sticky top-4 z-30 mb-8 px-4 py-2 bg-background/70 backdrop-blur-xl border border-white/10 rounded-full shadow-lg flex items-center gap-4 overflow-hidden">
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar flex-1 border-r pr-4 border-muted">
+          <Filter className="w-3.5 h-3.5 text-muted-foreground mr-2 shrink-0" />
+          {categories.map((category) => (
+            <button
+              key={category}
+              onClick={() => setSelectedCategory(category)}
+              className={`px-3 py-1 rounded-full text-xs transition-all whitespace-nowrap ${
+                selectedCategory === category
+                  ? 'bg-primary text-primary-foreground font-medium'
+                  : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+              }`}
             >
-              <img 
-                src={photo.url} 
-                alt={photo.title}
-                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-              />
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-6">
-                <p className="text-white/70 text-xs mb-1">{photo.category}</p>
-                <h3 className="text-white font-semibold text-lg">{photo.title}</h3>
-              </div>
-            </motion.div>
+              {category}
+            </button>
           ))}
-        </AnimatePresence>
-      </motion.div>
+        </div>
 
-      {/* Detail Modal */}
+        <div className="flex items-center p-0.5 bg-muted/30 rounded-full shrink-0">
+          <button
+            onClick={() => setViewMode('grid')}
+            className={`p-1.5 rounded-full transition-colors ${viewMode === 'grid' ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setViewMode('masonry')}
+            className={`p-1.5 rounded-full transition-colors ${viewMode === 'masonry' ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <StretchVertical className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setViewMode('timeline')}
+            className={`p-1.5 rounded-full transition-colors ${viewMode === 'timeline' ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="hidden sm:flex items-center gap-1 shrink-0 border-l pl-4 border-muted text-muted-foreground">
+          <button 
+            onClick={() => setZoomLevel(prev => Math.max(1, prev - 1))}
+            className="p-1 hover:text-foreground disabled:opacity-20"
+            disabled={zoomLevel === 1}
+          >
+            <ZoomOut className="w-3.5 h-3.5" />
+          </button>
+          <div className="text-[10px] font-mono w-4 text-center select-none">{zoomLevel}</div>
+          <button 
+            onClick={() => setZoomLevel(prev => Math.min(4, prev + 1))}
+            className="p-1 hover:text-foreground disabled:opacity-20"
+            disabled={zoomLevel === 4}
+          >
+            <ZoomIn className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-6 p-3 bg-destructive/5 border border-destructive/10 text-destructive rounded-lg text-xs">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="py-32 flex flex-col items-center justify-center space-y-3">
+          <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-[10px] text-muted-foreground tracking-widest uppercase">加载中</p>
+        </div>
+      ) : (
+        <AnimatePresence mode="wait">
+          {viewMode === 'timeline' ? (
+            <motion.div
+              key="timeline"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="space-y-10"
+            >
+              {groupedPhotos.map((group) => (
+                <div key={group.title} className="relative pl-6 sm:pl-10">
+                  <div className="absolute left-0 top-1 bottom-0 w-px bg-muted" />
+                  <div className="absolute left-[-2px] top-1.5 w-1 h-1 rounded-full bg-primary" />
+                  
+                  <div className="mb-4">
+                    <h2 className="text-sm font-bold tracking-tight flex items-center gap-2">
+                      {group.title}
+                      <span className="text-[10px] font-normal text-muted-foreground">
+                        / {group.photos.length}
+                      </span>
+                    </h2>
+                  </div>
+
+                  <div className={`grid ${gridColsClass}`}>
+                    {group.photos.map((photo, index) => (
+                      <PhotoCard 
+                        key={photo.id} 
+                        photo={photo} 
+                        index={index} 
+                        zoomLevel={zoomLevel} 
+                        onClick={() => setSelectedPhoto(photo)} 
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </motion.div>
+          ) : viewMode === 'masonry' ? (
+            <motion.div
+              key="masonry"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className={masonryColsClass}
+            >
+              {photos.map((photo, index) => (
+                <div key={photo.id} className="mb-4 break-inside-avoid">
+                  <PhotoCard 
+                    photo={photo} 
+                    index={index} 
+                    zoomLevel={zoomLevel} 
+                    onClick={() => setSelectedPhoto(photo)} 
+                  />
+                </div>
+              ))}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="grid"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className={`grid ${gridColsClass}`}
+            >
+              {photos.map((photo, index) => (
+                <PhotoCard 
+                  key={photo.id} 
+                  photo={photo} 
+                  index={index} 
+                  zoomLevel={zoomLevel} 
+                  onClick={() => setSelectedPhoto(photo)} 
+                />
+              ))}
+            </motion.div>
+          )}
+
+          {photos.length === 0 && !error && !loading && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="py-32 text-center"
+            >
+              <p className="text-xs text-muted-foreground">该分类下还没有照片</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
+
+      {/* Modal with Progressive Loading and Blur Background */}
       <AnimatePresence>
         {selectedPhoto && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 lg:p-12">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 overflow-hidden">
+            {/* Ambient Blurred Background (Uses thumbnail first, then high-res) */}
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setSelectedPhoto(null)}
-              className="absolute inset-0 bg-background/95 backdrop-blur-sm"
+              className="absolute inset-0 z-0 bg-cover bg-center scale-110"
+              style={{ 
+                backgroundImage: `url(${resolveAssetUrl(selectedPhoto.thumbnail_url || selectedPhoto.url)})`,
+                filter: 'blur(60px) brightness(0.3)'
+              }}
             />
             
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-6xl h-full max-h-[90vh] bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col lg:flex-row border border-border"
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="relative z-10 bg-card/80 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden w-full max-w-7xl h-[90vh] shadow-2xl flex flex-col lg:flex-row"
             >
-              {/* Close Button */}
-              <button 
+              <button
                 onClick={() => setSelectedPhoto(null)}
-                className="absolute top-4 right-4 z-10 p-2 bg-background/50 backdrop-blur-md rounded-full hover:bg-background transition-colors border border-border"
+                className="absolute top-4 right-4 z-20 p-2 rounded-full bg-background/50 hover:bg-background border shadow-sm transition-colors"
               >
-                <X className="w-6 h-6" />
+                <X className="w-4 h-4" />
               </button>
 
-              {/* Left Side: Image */}
-              <div className="w-full lg:w-3/5 h-[40vh] lg:h-full bg-black flex items-center justify-center">
-                <img 
-                  src={selectedPhoto.url} 
+              <div className="w-full lg:w-[70%] h-full flex items-center justify-center p-4 relative">
+                <ProgressiveImage 
+                  src={resolveAssetUrl(selectedPhoto.url)} 
+                  placeholderSrc={resolveAssetUrl(selectedPhoto.thumbnail_url || selectedPhoto.url)} 
                   alt={selectedPhoto.title}
-                  className="w-full h-full object-contain"
                 />
               </div>
 
-              {/* Right Side: Info */}
-              <div className="w-full lg:w-2/5 h-full overflow-y-auto p-8 lg:p-10 bg-card">
+              <div className="w-full lg:w-[30%] h-full border-l border-white/10 p-8 overflow-y-auto bg-card/40">
                 <div className="space-y-8">
-                  {/* Title & Category */}
-                  <div>
-                    <span className="inline-block px-3 py-1 bg-muted rounded-full text-xs font-semibold text-muted-foreground mb-3">
-                      {selectedPhoto.category}
-                    </span>
-                    <h2 className="text-3xl font-bold tracking-tight">{selectedPhoto.title}</h2>
-                    <div className="flex items-center mt-3 space-x-1">
-                      {[...Array(5)].map((_, i) => (
-                        <Star key={i} className={`w-4 h-4 ${i < selectedPhoto.rating ? 'fill-yellow-400 text-yellow-400' : 'text-muted'}`} />
-                      ))}
-                      <span className="ml-2 text-sm text-muted-foreground">({selectedPhoto.rating}.0)</span>
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-bold text-primary uppercase tracking-widest">{selectedPhoto.category}</span>
+                    <h2 className="text-2xl font-bold leading-tight">{selectedPhoto.title}</h2>
+                  </div>
+
+                  <div className="space-y-4 pt-6 border-t border-white/10">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground flex items-center gap-2"><Ruler className="w-3.5 h-3.5" /> 分辨率</span>
+                      <span className="font-mono">{selectedPhoto.width} × {selectedPhoto.height}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground flex items-center gap-2"><HardDrive className="w-3.5 h-3.5" /> 文件大小</span>
+                      <span className="font-mono">{formatFileSize(selectedPhoto.size)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground flex items-center gap-2"><Calendar className="w-3.5 h-3.5" /> 拍摄日期</span>
+                      <span>{new Date(selectedPhoto.createdAt).toLocaleDateString()}</span>
                     </div>
                   </div>
 
-                  {/* Story */}
-                  <div className="space-y-3">
-                    <div className="flex items-center space-x-2 text-foreground font-semibold">
-                      <Info className="w-4 h-4" />
-                      <span>照片故事</span>
-                    </div>
-                    <p className="text-muted-foreground text-sm leading-relaxed italic">
-                      &quot;{selectedPhoto.story || '未填写照片背后的故事...'}&quot;
-                    </p>
-                  </div>
-
-                  {/* Shooting Parameters */}
-                  <div className="space-y-3">
-                    <div className="flex items-center space-x-2 text-foreground font-semibold">
-                      <Camera className="w-4 h-4" />
-                      <span>拍摄参数</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      {selectedPhoto.params && Object.entries(selectedPhoto.params).map(([key, value]) => (
-                        <div key={key} className="bg-muted/50 p-3 rounded-lg">
-                          <p className="text-[10px] uppercase text-muted-foreground font-bold mb-1">{key}</p>
-                          <p className="text-sm font-medium">{value}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Color Palette */}
-                  <div className="space-y-3">
-                    <div className="flex items-center space-x-2 text-foreground font-semibold">
-                      <Palette className="w-4 h-4" />
-                      <span>色卡盘</span>
-                    </div>
-                    <div className="flex space-x-2">
-                      {selectedPhoto.palette?.map((color: string, i: number) => (
-                        <div key={i} className="flex flex-col items-center">
-                          <div 
-                            className="w-12 h-12 rounded-lg shadow-inner border border-white/10" 
-                            style={{ backgroundColor: color }}
-                          />
-                          <span className="text-[9px] mt-1 font-mono text-muted-foreground uppercase">{color}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Comments */}
-                  <div className="space-y-4">
-                    <div className="flex items-center space-x-2 text-foreground font-semibold">
-                      <MessageSquare className="w-4 h-4" />
-                      <span>评论 ({selectedPhoto.comments?.length || 0})</span>
-                    </div>
-                    <div className="space-y-3">
-                      {(selectedPhoto.comments ?? []).length > 0 ? (
-                        (selectedPhoto.comments ?? []).map((comment, i) => (
-                          <div key={i} className="bg-muted/30 p-4 rounded-xl border border-border/50">
-                            <p className="text-xs font-bold mb-1">{comment.user}</p>
-                            <p className="text-sm text-muted-foreground">{comment.content}</p>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-sm text-muted-foreground italic">暂无评论</p>
-                      )}
-                    </div>
+                  <div className="pt-8 space-y-3">
+                    <button 
+                      onClick={() => window.open(resolveAssetUrl(selectedPhoto.url), '_blank')}
+                      className="w-full py-2.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium flex items-center justify-center gap-2"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" /> 查看原图
+                    </button>
                   </div>
                 </div>
               </div>
@@ -273,5 +363,78 @@ export default function Gallery() {
         )}
       </AnimatePresence>
     </div>
+  )
+}
+
+function ProgressiveImage({ src, placeholderSrc, alt }: { src: string; placeholderSrc: string; alt: string }) {
+  const [isLoaded, setIsLoaded] = useState(false)
+  
+  return (
+    <div className="relative w-full h-full flex items-center justify-center">
+      {/* Thumbnail/Placeholder (Should be instant) */}
+      <img
+        src={placeholderSrc}
+        alt={alt}
+        className={`max-w-full max-h-full object-contain transition-opacity duration-300 ${isLoaded ? 'opacity-0' : 'opacity-100'}`}
+      />
+      
+      {/* High-res Image */}
+      <img
+        src={src}
+        alt={alt}
+        onLoad={() => setIsLoaded(true)}
+        className={`absolute max-w-full max-h-full object-contain transition-opacity duration-500 shadow-2xl rounded-sm ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+      />
+
+      {/* Loading Spinner in Bottom-Right */}
+      <AnimatePresence>
+        {!isLoaded && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute bottom-6 right-6 bg-black/40 backdrop-blur-md p-2 rounded-full text-white/80"
+          >
+            <Loader2 className="w-5 h-5 animate-spin" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+function PhotoCard({ photo, index, zoomLevel, onClick }: { 
+  photo: PhotoDto; 
+  index: number; 
+  zoomLevel: number;
+  onClick: () => void;
+}) {
+  return (
+    <motion.button
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: Math.min(index * 0.01, 0.5) }}
+      className="group w-full text-left outline-none"
+      onClick={onClick}
+    >
+      <div className={`relative overflow-hidden rounded-xl bg-muted/20 transition-all duration-300 group-hover:shadow-md ${zoomLevel <= 2 ? 'aspect-square' : 'aspect-[3/4]'}`}>
+        <img
+          src={resolveAssetUrl(photo.thumbnail_url || photo.url)}
+          alt={photo.title}
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          loading="lazy"
+        />
+        
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3">
+          <p className="text-white text-[10px] font-medium truncate">{photo.title}</p>
+        </div>
+
+        {photo.isFeatured && (
+          <div className="absolute top-2 right-2 p-1 bg-white/10 backdrop-blur-md rounded-full text-yellow-400">
+            <Star className="w-3 h-3 fill-yellow-400" />
+          </div>
+        )}
+      </div>
+    </motion.button>
   )
 }

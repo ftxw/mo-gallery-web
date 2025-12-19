@@ -3,17 +3,16 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 
 interface User {
-  id: string
-  email: string
-  name: string | null
+  username: string
 }
 
 interface AuthContextType {
   user: User | null
   token: string | null
-  login: (token: string, user: User) => void
+  login: (token: string, username: string) => void
   logout: () => void
   isAuthenticated: boolean
+  isReady: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -21,24 +20,41 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
+  const [isReady, setIsReady] = useState(false)
 
   useEffect(() => {
     const storedToken = localStorage.getItem('token')
     const storedUser = localStorage.getItem('user')
+    const storedUsername = localStorage.getItem('username')
 
-    if (storedToken && storedUser) {
-      setTimeout(() => {
-        setToken(storedToken)
-        setUser(JSON.parse(storedUser))
-      }, 0)
+    if (storedToken && (storedUser || storedUsername)) {
+      setToken(storedToken)
+      if (storedUsername) {
+        setUser({ username: storedUsername })
+        setIsReady(true)
+        return
+      }
+      if (storedUser) {
+        try {
+          const parsed = JSON.parse(storedUser) as { username?: string; email?: string }
+          setUser({ username: parsed.username ?? parsed.email ?? 'admin' })
+        } catch {
+          setUser({ username: 'admin' })
+        } finally {
+          setIsReady(true)
+        }
+        return
+      }
     }
+    setIsReady(true)
   }, [])
 
-  const login = (newToken: string, newUser: User) => {
+  const login = (newToken: string, username: string) => {
     setToken(newToken)
-    setUser(newUser)
+    setUser({ username })
     localStorage.setItem('token', newToken)
-    localStorage.setItem('user', JSON.stringify(newUser))
+    localStorage.setItem('username', username)
+    localStorage.setItem('user', JSON.stringify({ username }))
   }
 
   const logout = () => {
@@ -46,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
     localStorage.removeItem('token')
     localStorage.removeItem('user')
+    localStorage.removeItem('username')
   }
 
   return (
@@ -56,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         logout,
         isAuthenticated: !!token,
+        isReady,
       }}
     >
       {children}

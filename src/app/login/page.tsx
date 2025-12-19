@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { login as apiLogin } from '@/lib/api'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -19,8 +19,8 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const response = await apiLogin({ email, password })
-      login(response.token, response.user)
+      const token = await apiLogin({ username, password })
+      login(token, username)
       router.push('/admin')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
@@ -43,17 +43,17 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium mb-2">
-                邮箱
+              <label htmlFor="username" className="block text-sm font-medium mb-2">
+                用户名
               </label>
               <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 required
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="admin@example.com"
+                placeholder="admin"
               />
             </div>
 

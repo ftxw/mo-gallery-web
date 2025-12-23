@@ -137,6 +137,22 @@ export interface AdminSettingsDto {
   github_token?: string
   github_repo?: string
   github_path?: string
+  github_branch?: string
+  github_access_method?: string
+  github_pages_url?: string
+  // Comment Settings
+  comment_moderation?: boolean
+  blocked_keywords?: string
+}
+
+export interface CommentDto {
+  id: string
+  photoId: string
+  author: string
+  content: string
+  status: 'pending' | 'approved' | 'rejected'
+  createdAt: string
+  ip?: string
 }
 
 export interface PublicSettingsDto {
@@ -197,8 +213,17 @@ export async function uploadPhoto(input: {
   )
 }
 
-export async function deletePhoto(input: { token: string; id: string }): Promise<void> {
-  await apiRequest(`/api/admin/photos/${encodeURIComponent(input.id)}`, { method: 'DELETE' }, input.token)
+export async function deletePhoto(input: {
+  token: string
+  id: string
+  deleteFromStorage?: boolean
+}): Promise<void> {
+  const queryParam = input.deleteFromStorage ? '?deleteFromStorage=true' : ''
+  await apiRequest(
+    `/api/admin/photos/${encodeURIComponent(input.id)}${queryParam}`,
+    { method: 'DELETE' },
+    input.token
+  )
 }
 
 export async function updatePhoto(input: {
@@ -258,4 +283,34 @@ export function resolveAssetUrl(assetPath: string, cdnDomain?: string): string {
   if (cdn) return `${cdn.replace(/\/+$/, '')}${normalizedPath}`
 
   return `${getApiBase()}${normalizedPath}`
+}
+
+// --- Comment APIs ---
+
+export async function getComments(token: string, params?: { status?: string; photoId?: string }): Promise<CommentDto[]> {
+  const query = buildQuery(params || {})
+  return apiRequestData<CommentDto[]>(`/api/admin/comments${query}`, {}, token)
+}
+
+export async function updateCommentStatus(
+  token: string,
+  id: string,
+  status: 'approved' | 'rejected'
+): Promise<CommentDto> {
+  return apiRequestData<CommentDto>(
+    `/api/admin/comments/${encodeURIComponent(id)}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    },
+    token
+  )
+}
+
+export async function deleteComment(token: string, id: string): Promise<void> {
+  await apiRequest(
+    `/api/admin/comments/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+    token
+  )
 }

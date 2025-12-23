@@ -1,499 +1,355 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
-import {
-  Calendar,
-  Ruler,
-  Star,
-  X,
-  LayoutGrid,
-  StretchVertical,
-  Clock,
-  ZoomIn,
-  ZoomOut,
+import { useState, useEffect, useMemo } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { 
+  X, 
+  Maximize2, 
+  Camera, 
+  Aperture, 
+  Clock, 
+  Gauge, 
+  MapPin, 
+  Download,
   Filter,
-  Maximize2,
-  HardDrive,
-  Loader2,
-  Camera,
-  Aperture,
-  Timer,
-  Gauge,
-  MapPin,
-  Code
+  ChevronRight,
+  ArrowRight
 } from 'lucide-react'
-import { getCategories, getPhotos, resolveAssetUrl, type PhotoDto } from '@/lib/api'
+import { getPhotos, getCategories, resolveAssetUrl, type PhotoDto } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
-
-type ViewMode = 'grid' | 'masonry' | 'timeline'
-
-function formatFileSize(bytes?: number): string {
-  if (!bytes) return 'Unknown'
-  if (bytes === 0) return '0 Bytes'
-  const k = 1024
-  const sizes = ['Bytes', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
+import { useSettings } from '@/contexts/SettingsContext'
 
 export default function GalleryPage() {
   const { t } = useLanguage()
-  const [categories, setCategories] = useState<string[]>(['ALL'])
-  const [selectedCategory, setSelectedCategory] = useState('ALL')
-  const [viewMode, setViewMode] = useState<ViewMode>('grid')
-  const [zoomLevel, setZoomLevel] = useState(3)
-
+  const { settings } = useSettings()
   const [photos, setPhotos] = useState<PhotoDto[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
+  const [categories, setCategories] = useState<string[]>([])
+  const [activeCategory, setActiveCategory] = useState('全部')
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoDto | null>(null)
+  const [loading, setLoading] = useState(true)
   const [dominantColors, setDominantColors] = useState<string[]>([])
 
-  // Color extraction logic
   useEffect(() => {
-    if (selectedPhoto) {
-      const img = new Image();
-      img.crossOrigin = "Anonymous";
-      img.src = resolveAssetUrl(selectedPhoto.url);
-      img.onload = () => {
-        try {
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d", { willReadFrequently: true });
-          if (!ctx) return;
-          canvas.width = 40; canvas.height = 40;
-          ctx.drawImage(img, 0, 0, 40, 40);
-          const imageData = ctx.getImageData(0, 0, 40, 40).data;
-          const colorCounts: Record<string, number> = {};
-          for (let i = 0; i < imageData.length; i += 16) {
-            const r = Math.round(imageData[i] / 10) * 10;
-            const g = Math.round(imageData[i+1] / 10) * 10;
-            const b = Math.round(imageData[i+2] / 10) * 10;
-            const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
-            colorCounts[hex] = (colorCounts[hex] || 0) + 1;
-          }
-          const sorted = Object.entries(colorCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(c => c[0]);
-          setDominantColors(sorted);
-        } catch (e) {
-          console.error('Palette extraction failed', e);
-        }
-      };
-    } else {
-      setDominantColors([]);
-    }
-  }, [selectedPhoto])
-
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
+    const fetchData = async () => {
       try {
-        const data = await getCategories()
-        if (cancelled) return
-        setCategories(data.includes('全部') ? data.map(c => c === '全部' ? 'ALL' : c) : ['ALL', ...data])
-      } catch (err) {
-        if (cancelled) return
-        setError(err instanceof Error ? err.message : 'Failed to load categories')
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    setError('')
-    setLoading(true)
-    ;(async () => {
-      try {
-        const queryCategory = selectedCategory === 'ALL' ? '全部' : selectedCategory
-        const data = await getPhotos({ category: queryCategory, limit: 100 })
-        if (cancelled) return
-        setPhotos(data)
-      } catch (err) {
-        if (cancelled) return
-        setError(err instanceof Error ? err.message : 'Failed to load photos')
+        const [photosData, categoriesData] = await Promise.all([
+          getPhotos(),
+          getCategories()
+        ])
+        setPhotos(photosData)
+        setCategories(['全部', ...categoriesData.filter(c => c !== '全部')])
+      } catch (error) {
+        console.error('Failed to fetch gallery data:', error)
       } finally {
-        if (cancelled) return
         setLoading(false)
       }
-    })()
-    return () => {
-      cancelled = true
     }
-  }, [selectedCategory])
+    fetchData()
+  }, [])
 
-  const groupedPhotos = useMemo(() => {
-    if (viewMode !== 'timeline') return []
-    const groups: { title: string; photos: PhotoDto[] }[] = []
-    const sorted = [...photos].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    
-    sorted.forEach(photo => {
-      const date = new Date(photo.createdAt)
-      const title = `${date.getFullYear()}.${(date.getMonth() + 1).toString().padStart(2, '0')}`
-      const lastGroup = groups[groups.length - 1]
-      if (lastGroup && lastGroup.title === title) {
-        lastGroup.photos.push(photo)
-      } else {
-        groups.push({ title, photos: [photo] })
+  const filteredPhotos = useMemo(() => {
+    if (activeCategory === '全部') return photos
+    return photos.filter(p => p.category.includes(activeCategory))
+  }, [photos, activeCategory])
+
+  // Palette extraction for selected photo
+  useEffect(() => {
+    if (selectedPhoto) {
+      const img = new Image()
+      img.crossOrigin = "Anonymous"
+      img.src = resolveAssetUrl(selectedPhoto.url, settings?.cdn_domain)
+      img.onload = () => {
+        const canvas = document.createElement("canvas")
+        const ctx = canvas.getContext("2d", { willReadFrequently: true })
+        if (!ctx) return
+        canvas.width = 40; canvas.height = 40
+        ctx.drawImage(img, 0, 0, 40, 40)
+        const imageData = ctx.getImageData(0, 0, 40, 40).data
+        const colorCounts: Record<string, number> = {}
+        for (let i = 0; i < imageData.length; i += 16) {
+          const r = Math.round(imageData[i] / 10) * 10
+          const g = Math.round(imageData[i+1] / 10) * 10
+          const b = Math.round(imageData[i+2] / 10) * 10
+          const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`
+          colorCounts[hex] = (colorCounts[hex] || 0) + 1
+        }
+        const sorted = Object.entries(colorCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(c => c[0])
+        setDominantColors(sorted)
       }
-    })
-    return groups
-  }, [photos, viewMode])
-
-  const gridColsClass = useMemo(() => {
-    if (viewMode === 'masonry') return ''
-    switch (zoomLevel) {
-      case 1: return 'grid-cols-5 sm:grid-cols-8 lg:grid-cols-12 gap-1'
-      case 2: return 'grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-2'
-      case 3: return 'grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3'
-      case 4: return 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4'
-      default: return 'grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3'
+    } else {
+      setDominantColors([])
     }
-  }, [zoomLevel, viewMode])
-
-  const masonryColsClass = useMemo(() => {
-    switch (zoomLevel) {
-      case 1: return 'columns-5 sm:columns-8 lg:columns-12 gap-1'
-      case 2: return 'columns-4 sm:columns-6 lg:columns-10 gap-2'
-      case 3: return 'columns-3 sm:columns-4 lg:columns-6 gap-3'
-      case 4: return 'columns-2 sm:columns-3 lg:columns-4 gap-4'
-      default: return 'columns-3 sm:columns-4 lg:columns-6 gap-3'
-    }
-  }, [zoomLevel])
+  }, [selectedPhoto, settings?.cdn_domain])
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="max-w-[1920px] mx-auto px-6 py-12">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 border-b border-border pb-6">
-          <div>
-            <h1 className="font-serif text-5xl md:text-7xl font-light tracking-tighter text-foreground">
-              {t('gallery.title')}
-            </h1>
-            <p className="font-sans text-xs tracking-[0.2em] text-muted-foreground mt-2 uppercase">
-              {photos.length} {t('gallery.count_suffix')}
-            </p>
+    <div className="min-h-screen bg-background text-foreground pt-32 pb-24 px-6 md:px-12 lg:px-20">
+      {/* Editorial Header */}
+      <header className="max-w-[1800px] mx-auto mb-20">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
+          <div className="space-y-4">
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center gap-3 text-primary"
+            >
+              <span className="text-[10px] font-black uppercase tracking-[0.4em]">Collection</span>
+              <div className="h-[1px] w-12 bg-primary/30" />
+            </motion.div>
+            <motion.h1 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="text-6xl md:text-8xl font-serif font-light tracking-tighter leading-none"
+            >
+              {activeCategory === '全部' ? t('gallery.title') : activeCategory}
+            </motion.h1>
           </div>
           
-          <div className="flex items-center gap-6 mt-6 md:mt-0">
-            <button 
-              onClick={() => setZoomLevel(prev => Math.max(1, prev - 1))}
-              className="text-muted-foreground hover:text-primary transition-colors disabled:opacity-20"
-              disabled={zoomLevel === 1}
-            >
-              <ZoomOut className="w-5 h-5" />
-            </button>
-            <button 
-              onClick={() => setZoomLevel(prev => Math.min(4, prev + 1))}
-              className="text-muted-foreground hover:text-primary transition-colors disabled:opacity-20"
-              disabled={zoomLevel === 4}
-            >
-              <ZoomIn className="w-5 h-5" />
-            </button>
-          </div>
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="flex flex-col items-start md:items-end gap-4"
+          >
+            <div className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">
+              {filteredPhotos.length} {t('gallery.count_suffix')}
+            </div>
+            <div className="flex flex-wrap gap-2 md:justify-end">
+              {categories.map((cat, i) => (
+                <button
+                  key={cat}
+                  onClick={() => setActiveCategory(cat)}
+                  className={`px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-all border ${
+                    activeCategory === cat 
+                    ? 'bg-primary text-primary-foreground border-primary' 
+                    : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
+                  }`}
+                >
+                  {cat === '全部' ? t('gallery.all') : cat}
+                </button>
+              ))}
+            </div>
+          </motion.div>
         </div>
+      </header>
 
-        {/* Controls */}
-        <div className="sticky top-20 z-30 mb-8 py-3 bg-background/95 backdrop-blur-xl border-b border-border flex flex-col sm:flex-row items-center justify-between gap-6 transition-all">
-          <div className="flex items-center gap-6 overflow-x-auto no-scrollbar w-full sm:w-auto">
-            {categories.map((category) => (
-              <button
-                key={category}
-                onClick={() => setSelectedCategory(category)}
-                className={`pb-1 text-[10px] font-bold tracking-[0.2em] uppercase transition-all whitespace-nowrap border-b-2 ${
-                  selectedCategory === category
-                    ? 'border-primary text-foreground'
-                    : 'border-transparent text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {category === 'ALL' ? t('gallery.all') : category}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {[
-              { mode: 'grid', icon: LayoutGrid },
-              { mode: 'masonry', icon: StretchVertical },
-              { mode: 'timeline', icon: Clock }
-            ].map((item) => (
-              <button
-                key={item.mode}
-                onClick={() => setViewMode(item.mode as ViewMode)}
-                className={`p-2 transition-colors rounded-lg ${viewMode === item.mode ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}
-              >
-                <item.icon className="w-4 h-4" />
-              </button>
-            ))}
-          </div>
+      {/* Photobook Masonry Grid */}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="aspect-[3/4] bg-muted animate-pulse" />
+          ))}
         </div>
-
-        {error && (
-          <div className="mb-12 p-4 border border-destructive text-destructive font-sans text-sm tracking-widest uppercase">
-            {t('common.error')}: {error}
-          </div>
-        )}
-
-        {loading ? (
-          <div className="py-48 flex flex-col items-center justify-center space-y-4">
-            <div className="w-12 h-12 border border-primary border-t-transparent animate-spin rounded-full" />
-            <p className="text-xs font-sans tracking-[0.3em] uppercase text-muted-foreground">{t('common.loading')}</p>
-          </div>
-        ) : (
-          <AnimatePresence mode="wait">
-            {viewMode === 'timeline' ? (
-              <motion.div
-                key="timeline"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="space-y-24"
-              >
-                {groupedPhotos.map((group) => (
-                  <div key={group.title} className="relative">
-                    <div className="sticky top-40 z-10 mb-8 bg-background py-2">
-                       <h2 className="font-serif text-4xl text-foreground">
-                        {group.title}
-                        <span className="font-sans text-xs ml-4 tracking-widest text-muted-foreground align-middle">
-                          ({group.photos.length})
-                        </span>
-                      </h2>
+      ) : (
+        <div className="max-w-[1800px] mx-auto">
+          <motion.div 
+            layout
+            className="columns-1 md:columns-2 lg:columns-3 gap-12 space-y-12"
+          >
+            <AnimatePresence mode='popLayout'>
+              {filteredPhotos.map((photo, index) => (
+                <motion.div
+                  key={photo.id}
+                  layout
+                  initial={{ opacity: 0, y: 40 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.8, delay: index % 3 * 0.1 }}
+                  className="break-inside-avoid group cursor-none"
+                  onClick={() => setSelectedPhoto(photo)}
+                >
+                  <div className="relative overflow-hidden bg-muted">
+                    <img
+                      src={resolveAssetUrl(photo.thumbnailUrl || photo.url, settings?.cdn_domain)}
+                      alt={photo.title}
+                      className="w-full h-auto object-cover transition-transform duration-[1.5s] ease-out group-hover:scale-105"
+                    />
+                    
+                    {/* Minimalist Overlay */}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex flex-col justify-end p-8">
+                      <div className="translate-y-4 group-hover:translate-y-0 transition-transform duration-500">
+                        <p className="text-[10px] font-black text-primary uppercase tracking-[0.3em] mb-2">
+                          {photo.category.split(',')[0]}
+                        </p>
+                        <h3 className="text-2xl font-serif text-white leading-tight mb-4">
+                          {photo.title}
+                        </h3>
+                        <div className="flex items-center gap-2 text-white/60 text-[10px] font-bold uppercase tracking-widest">
+                          <span>View Entry</span>
+                          <ArrowRight className="w-3 h-3" />
+                        </div>
+                      </div>
                     </div>
 
-                    <div className={`grid ${gridColsClass}`}>
-                      {group.photos.map((photo, index) => (
-                        <PhotoCard 
-                          key={photo.id} 
-                          photo={photo} 
-                          index={index} 
-                          zoomLevel={zoomLevel} 
-                          onClick={() => setSelectedPhoto(photo)} 
-                        />
+                    {/* Photo Serial Number */}
+                    <div className="absolute top-4 left-4 text-[8px] font-mono text-white/30 tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
+                      NO. {String(index + 1).padStart(3, '0')}
+                    </div>
+                  </div>
+                  
+                  {/* Subtle Caption Below */}
+                  <div className="mt-4 flex justify-between items-start opacity-40 group-hover:opacity-100 transition-opacity duration-500">
+                    <span className="text-[9px] font-mono uppercase tracking-tighter">{photo.cameraModel || 'Recorded Moment'}</span>
+                    <span className="text-[9px] font-mono">{new Date(photo.createdAt).getFullYear()}</span>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </motion.div>
+
+          {filteredPhotos.length === 0 && (
+            <div className="py-40 text-center">
+              <p className="text-xs font-bold uppercase tracking-[0.3em] text-muted-foreground">
+                {t('gallery.empty')}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Immersive Detail Modal */}
+      <AnimatePresence>
+        {selectedPhoto && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-background/95 backdrop-blur-sm overflow-hidden"
+          >
+            {/* Close Button */}
+            <button 
+              onClick={() => setSelectedPhoto(null)}
+              className="absolute top-8 right-8 z-[110] p-4 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="w-8 h-8" />
+            </button>
+
+            <div className="w-full h-full flex flex-col lg:flex-row">
+              {/* Photo Side */}
+              <div className="flex-1 relative flex items-center justify-center p-6 md:p-12 lg:p-20 bg-muted/30">
+                <motion.img
+                  initial={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
+                  animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+                  transition={{ duration: 0.8 }}
+                  src={resolveAssetUrl(selectedPhoto.url, settings?.cdn_domain)}
+                  alt={selectedPhoto.title}
+                  className="max-w-full max-h-full object-contain shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)]"
+                />
+              </div>
+
+              {/* Info Side (拉页感) */}
+              <motion.div 
+                initial={{ x: 100, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ delay: 0.2, duration: 0.6 }}
+                className="w-full lg:w-[450px] bg-background border-l border-border h-full overflow-y-auto custom-scrollbar flex flex-col shadow-2xl"
+              >
+                <div className="p-10 md:p-16 space-y-16 flex-1">
+                  {/* Title Section */}
+                  <div className="space-y-6">
+                    <div className="flex flex-wrap gap-2">
+                      {selectedPhoto.category.split(',').map(cat => (
+                        <span key={cat} className="text-[10px] font-black uppercase tracking-[0.2em] text-primary border border-primary/30 px-3 py-1">
+                          {cat}
+                        </span>
                       ))}
                     </div>
+                    <h2 className="text-5xl md:text-6xl font-serif leading-[0.9] tracking-tighter">
+                      {selectedPhoto.title}
+                    </h2>
                   </div>
-                ))}
-              </motion.div>
-            ) : viewMode === 'masonry' ? (
-              <motion.div
-                key="masonry"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className={masonryColsClass}
-              >
-                {photos.map((photo, index) => (
-                  <div key={photo.id} className="mb-3 break-inside-avoid">
-                    <PhotoCard 
-                      photo={photo} 
-                      index={index} 
-                      zoomLevel={zoomLevel} 
-                      onClick={() => setSelectedPhoto(photo)} 
-                    />
+
+                  {/* Metadata Grid */}
+                  <div className="grid grid-cols-2 gap-y-10 gap-x-8 border-t border-border pt-10">
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">{t('gallery.resolution')}</p>
+                      <p className="font-mono text-sm">{selectedPhoto.width} × {selectedPhoto.height}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">{t('gallery.size')}</p>
+                      <p className="font-mono text-sm">{formatFileSize(selectedPhoto.size)}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">{t('gallery.date')}</p>
+                      <p className="font-mono text-sm">{new Date(selectedPhoto.createdAt).toLocaleDateString()}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">{t('gallery.palette')}</p>
+                      <div className="flex gap-1.5 pt-1">
+                        {dominantColors.map((color, i) => (
+                          <div key={i} className="w-5 h-5 border border-white/10" style={{ backgroundColor: color }} />
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                ))}
-              </motion.div>
-            ) : (
-              <motion.div
-                key="grid"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className={`grid ${gridColsClass}`}
-              >
-                {photos.map((photo, index) => (
-                  <PhotoCard 
-                    key={photo.id} 
-                    photo={photo} 
-                    index={index} 
-                    zoomLevel={zoomLevel} 
-                    onClick={() => setSelectedPhoto(photo)} 
-                  />
-                ))}
-              </motion.div>
-            )}
 
-            {photos.length === 0 && !error && !loading && (
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="py-48 text-center"
-              >
-                <p className="font-serif text-2xl text-muted-foreground italic">{t('gallery.empty')}</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        )}
+                  {/* Technical Specs */}
+                  {(selectedPhoto.cameraModel || selectedPhoto.aperture) ? (
+                    <div className="space-y-10">
+                      <div className="space-y-3">
+                        <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] flex items-center gap-2">
+                          <Camera className="w-3 h-3 text-primary" /> {t('gallery.equipment')}
+                        </p>
+                        <p className="font-serif text-2xl leading-tight">
+                          {selectedPhoto.cameraMake} {selectedPhoto.cameraModel}
+                        </p>
+                      </div>
 
-        {/* Modal - Sharp & Brutal */}
-        <AnimatePresence>
-          {selectedPhoto && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm p-0 md:p-8">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.98 }}
-                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                className="relative w-full h-full max-w-[1800px] bg-background border border-border flex flex-col lg:flex-row overflow-hidden"
-              >
-                <button
-                  onClick={() => setSelectedPhoto(null)}
-                  className="absolute top-0 right-0 z-50 p-6 text-foreground hover:text-primary transition-colors bg-background/50 backdrop-blur-md border-b border-l border-border"
-                >
-                  <X className="w-6 h-6" />
-                </button>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="p-5 border border-border bg-muted/10 space-y-1">
+                          <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{t('gallery.aperture')}</p>
+                          <p className="font-mono text-xl">{selectedPhoto.aperture || '—'}</p>
+                        </div>
+                        <div className="p-5 border border-border bg-muted/10 space-y-1">
+                          <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{t('gallery.shutter')}</p>
+                          <p className="font-mono text-xl">{selectedPhoto.shutterSpeed || '—'}</p>
+                        </div>
+                        <div className="p-5 border border-border bg-muted/10 space-y-1">
+                          <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{t('gallery.iso')}</p>
+                          <p className="font-mono text-xl">{selectedPhoto.iso || '—'}</p>
+                        </div>
+                        <div className="p-5 border border-border bg-muted/10 space-y-1">
+                          <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{t('gallery.focal')}</p>
+                          <p className="font-mono text-xl">{selectedPhoto.focalLength || '—'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-10 border-t border-border border-dashed opacity-30 text-center">
+                      <p className="text-[10px] tracking-[0.3em] uppercase">{t('gallery.no_exif')}</p>
+                    </div>
+                  )}
 
-                {/* Image Area */}
-                <div className="w-full lg:w-[70%] h-full flex items-center justify-center bg-black/5 relative overflow-hidden">
-                  <div className="w-full h-full p-4 md:p-12 flex items-center justify-center">
-                    <img 
-                      src={resolveAssetUrl(selectedPhoto.url)} 
-                      alt={selectedPhoto.title}
-                      className="max-w-full max-h-full object-contain shadow-2xl"
-                    />
-                  </div>
+                  {selectedPhoto.latitude && (
+                    <button className="w-full py-4 border border-border hover:border-primary text-[10px] font-black uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-2">
+                      <MapPin className="w-3 h-3" /> Location Tagged
+                    </button>
+                  )}
                 </div>
 
-                {/* Info Sidebar */}
-                <div className="w-full lg:w-[30%] h-full border-l border-border bg-background overflow-y-auto">
-                  <div className="p-8 md:p-12 space-y-12">
-                    <div className="space-y-4">
-                       <div className="flex flex-wrap gap-2">
-                        {selectedPhoto.category.split(',').map(cat => (
-                          <span key={cat} className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary border border-primary px-2 py-1">
-                            {cat}
-                          </span>
-                        ))}
-                        {selectedPhoto.isFeatured && (
-                          <span className="flex items-center gap-1 px-3 py-1 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] font-bold uppercase tracking-wider border border-amber-500/30">
-                            <Star className="w-3 h-3 fill-current" /> {t('home.curated')}
-                          </span>
-                        )}
-                      </div>
-                      <h2 className="font-serif text-5xl leading-[0.9] text-foreground">{selectedPhoto.title}</h2>
-                    </div>
-
-                    {/* Color Palette */}
-                    <div className="space-y-3">
-                      <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">{t('gallery.palette')}</h3>
-                      <div className="flex gap-2">
-                        {dominantColors.length > 0 ? dominantColors.map((color, i) => (
-                          <div 
-                            key={i} 
-                            className="w-8 h-8 border border-border transition-all hover:scale-110"
-                            style={{ backgroundColor: color }}
-                            title={color}
-                          />
-                        )) : (
-                          [...Array(5)].map((_, i) => (
-                            <div key={i} className="w-8 h-8 bg-muted animate-pulse" />
-                          ))
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-x-8 gap-y-8">
-                       <div className="space-y-1">
-                          <p className="text-[10px] font-bold tracking-[0.2em] text-muted-foreground uppercase">{t('gallery.resolution')}</p>
-                          <p className="font-mono text-sm">{selectedPhoto.width} × {selectedPhoto.height}</p>
-                       </div>
-                       <div className="space-y-1">
-                          <p className="text-[10px] font-bold tracking-[0.2em] text-muted-foreground uppercase">{t('gallery.size')}</p>
-                          <p className="font-mono text-sm">{formatFileSize(selectedPhoto.size)}</p>
-                       </div>
-                       <div className="space-y-1">
-                          <p className="text-[10px] font-bold tracking-[0.2em] text-muted-foreground uppercase">{t('gallery.date')}</p>
-                          <p className="font-mono text-sm">{new Date(selectedPhoto.takenAt || selectedPhoto.createdAt).toLocaleDateString(t('common.date_locale') || 'en-US')}</p>
-                       </div>
-                    </div>
-
-                    {(selectedPhoto.cameraModel || selectedPhoto.aperture || selectedPhoto.iso) ? (
-                      <div className="space-y-8 pt-8 border-t border-border">
-                        <div className="space-y-2">
-                           <p className="text-[10px] font-bold tracking-[0.2em] text-muted-foreground uppercase flex items-center gap-2">
-                             <Camera className="w-3 h-3" /> {t('gallery.equipment')}
-                           </p>
-                           <p className="font-serif text-xl">{selectedPhoto.cameraMake} {selectedPhoto.cameraModel}</p>
-                           {selectedPhoto.lens && <p className="text-xs text-muted-foreground">{selectedPhoto.lens}</p>}
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                           <div className="p-4 border border-border">
-                              <p className="text-[9px] font-bold tracking-[0.2em] text-muted-foreground uppercase mb-1">{t('gallery.aperture')}</p>
-                              <p className="font-mono text-lg">{selectedPhoto.aperture}</p>
-                           </div>
-                           <div className="p-4 border border-border">
-                              <p className="text-[9px] font-bold tracking-[0.2em] text-muted-foreground uppercase mb-1">{t('gallery.shutter')}</p>
-                              <p className="font-mono text-lg">{selectedPhoto.shutterSpeed}</p>
-                           </div>
-                           <div className="p-4 border border-border">
-                              <p className="text-[9px] font-bold tracking-[0.2em] text-muted-foreground uppercase mb-1">{t('gallery.iso')}</p>
-                              <p className="font-mono text-lg">{selectedPhoto.iso}</p>
-                           </div>
-                           <div className="p-4 border border-border">
-                              <p className="text-[9px] font-bold tracking-[0.2em] text-muted-foreground uppercase mb-1">{t('gallery.focal')}</p>
-                              <p className="font-mono text-lg">{selectedPhoto.focalLength}</p>
-                           </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="pt-8 border-t border-border opacity-50">
-                        <p className="text-[10px] tracking-[0.2em] uppercase">{t('gallery.no_exif')}</p>
-                      </div>
-                    )}
-
-                    <div className="pt-8">
-                       <button 
-                        onClick={() => window.open(resolveAssetUrl(selectedPhoto.url), '_blank')}
-                        className="w-full py-4 bg-foreground text-background font-bold tracking-[0.2em] text-xs uppercase hover:bg-primary hover:text-primary-foreground transition-colors"
-                      >
-                        {t('gallery.download')}
-                      </button>
-                    </div>
-                  </div>
+                {/* Footer Action */}
+                <div className="p-10 border-t border-border bg-muted/5">
+                  <a 
+                    href={resolveAssetUrl(selectedPhoto.url, settings?.cdn_domain)} 
+                    target="_blank"
+                    className="w-full py-5 bg-foreground text-background text-[10px] font-black uppercase tracking-[0.4em] hover:bg-primary hover:text-primary-foreground transition-all flex items-center justify-center gap-3"
+                  >
+                    <Download className="w-4 h-4" />
+                    {t('gallery.download')}
+                  </a>
                 </div>
               </motion.div>
             </div>
-          )}
-        </AnimatePresence>
-      </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
 
-function PhotoCard({ photo, index, zoomLevel, onClick }: { 
-  photo: PhotoDto; 
-  index: number; 
-  zoomLevel: number;
-  onClick: () => void;
-}) {
-  return (
-    <motion.button
-      layout
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ delay: Math.min(index * 0.05, 0.5) }}
-      className="group w-full text-left outline-none block relative"
-      onClick={onClick}
-    >
-      <div className={`relative overflow-hidden bg-muted ${zoomLevel <= 2 ? 'aspect-square' : 'aspect-[4/5]'}`}>
-        <img
-          src={resolveAssetUrl(photo.thumbnailUrl || photo.url)}
-          alt={photo.title}
-          className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105 grayscale group-hover:grayscale-0"
-          loading="lazy"
-        />
-        
-        <div className="absolute inset-0 bg-primary/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-        
-        <div className="absolute bottom-0 left-0 w-full p-4 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0">
-          <p className="bg-background/90 text-foreground text-[10px] font-bold tracking-widest uppercase inline-block px-2 py-1">
-            {photo.title}
-          </p>
-        </div>
-      </div>
-    </motion.button>
-  )
+function formatFileSize(bytes?: number): string {
+  if (!bytes) return 'Unknown'; if (bytes === 0) return '0 Bytes'
+  const k = 1024; const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }

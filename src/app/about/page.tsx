@@ -8,7 +8,7 @@ export default function About() {
   const { t } = useLanguage()
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex items-center">
+    <div className="min-h-screen bg-background text-foreground flex items-center pt-24 md:pt-0">
       <div className="max-w-[1920px] mx-auto px-6 py-24 md:py-12 w-full">
         <div className="flex flex-col md:flex-row gap-16 lg:gap-32 items-stretch">
           

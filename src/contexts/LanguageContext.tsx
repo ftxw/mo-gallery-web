@@ -43,10 +43,6 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     return current as string
   }
 
-  if (!mounted) {
-    return <>{children}</> // Render children directly during hydration to prevent mismatch
-  }
-
   return (
     <LanguageContext.Provider value={{ locale, setLocale: changeLocale, t }}>
       {children}

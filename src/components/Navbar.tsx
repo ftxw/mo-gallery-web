@@ -8,15 +8,22 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useSettings } from '@/contexts/SettingsContext'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { usePathname } from 'next/navigation'
 
 export default function Navbar() {
   const { isAuthenticated, logout, user } = useAuth()
   const { theme, setTheme, mounted } = useTheme()
   const { settings } = useSettings()
   const { t, locale, setLocale } = useLanguage()
+  const pathname = usePathname()
   const router = useRouter()
 
   const siteTitle = settings?.site_title || 'MO GALLERY'
+
+  // Hide navbar on admin pages
+  if (pathname?.startsWith('/admin/')) {
+    return null
+  }
 
   const handleLogout = () => {
     logout()

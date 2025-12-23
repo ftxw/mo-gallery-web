@@ -3,12 +3,19 @@
 import { useSettings } from '@/contexts/SettingsContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 
 export default function Footer() {
   const { settings } = useSettings()
   const { t } = useLanguage()
+  const pathname = usePathname()
   const siteTitle = settings?.site_title || 'MO GALLERY'
   const currentYear = new Date().getFullYear()
+
+  // Hide footer on admin pages
+  if (pathname?.startsWith('/admin/')) {
+    return null
+  }
 
   return (
     <footer className="relative bg-background text-foreground pt-24 pb-12 border-t border-border overflow-hidden">

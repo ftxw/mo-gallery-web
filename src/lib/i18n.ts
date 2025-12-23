@@ -153,6 +153,11 @@ export const dictionaries = {
       confirm_delete_multiple: '确定要删除',
       delete_from_storage: '同时删除存储中的文件',
       delete_from_storage_hint: '如果勾选，将从存储提供商中永久删除文件。如果不勾选，仅删除数据库记录，文件保留在存储中。',
+      comments_config: '评论配置',
+      comment_moderation: '评论审核',
+      blocked_keywords: '屏蔽关键词',
+      comments_manage: '评论管理',
+      notify_success: '操作成功',
     }
   },
   en: {
@@ -307,6 +312,11 @@ export const dictionaries = {
       confirm_delete_multiple: 'Are you sure you want to delete',
       delete_from_storage: 'Also delete files from storage',
       delete_from_storage_hint: 'If checked, files will be permanently deleted from the storage provider. If unchecked, only database records will be removed, and files will remain in storage.',
+      comments_config: 'Comments Configuration',
+      comment_moderation: 'Comment Moderation',
+      blocked_keywords: 'Blocked Keywords',
+      comments_manage: 'Manage Comments',
+      notify_success: 'Operation successful',
     }
   }
 }

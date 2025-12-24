@@ -15,6 +15,7 @@ export const dictionaries = {
       search: '搜索...',
       back: '返回',
       success: '操作成功',
+      copied: '复制成功',
     },
     nav: {
       home: '首页',
@@ -183,6 +184,7 @@ export const dictionaries = {
       search: 'Search...',
       back: 'Back',
       success: 'Operation Successful',
+      copied: 'Copied',
     },
     nav: {
       home: 'HOME',

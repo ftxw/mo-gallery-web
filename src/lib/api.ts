@@ -110,6 +110,7 @@ export interface PhotoDto {
   size?: number
   isFeatured: boolean
   createdAt: string
+  storageProvider?: string
   // EXIF data
   cameraMake?: string
   cameraModel?: string

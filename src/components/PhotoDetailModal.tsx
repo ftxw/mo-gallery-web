@@ -38,7 +38,12 @@ export function PhotoDetailModal({
   const [showInfo, setShowInfo] = useState(true)
   const [dominantColors, setDominantColors] = useState<string[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [imageLoaded, setImageLoaded] = useState(false)
   const resolvedCdnDomain = settings?.cdn_domain?.trim() || undefined
+
+  useEffect(() => {
+    setImageLoaded(false)
+  }, [photo])
 
   const notify = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
     const id = Math.random().toString(36).substring(2, 9)
@@ -50,7 +55,8 @@ export function PhotoDetailModal({
     if (photo && isOpen) {
       const img = new Image()
       img.crossOrigin = 'Anonymous'
-      img.src = resolveAssetUrl(photo.url, resolvedCdnDomain)
+      // Use thumbnail for faster palette extraction if available
+      img.src = resolveAssetUrl(photo.thumbnailUrl || photo.url, resolvedCdnDomain)
       img.onload = () => {
         try {
           const canvas = document.createElement('canvas')
@@ -61,15 +67,35 @@ export function PhotoDetailModal({
           ctx.drawImage(img, 0, 0, 40, 40)
           const imageData = ctx.getImageData(0, 0, 40, 40).data
           const colorCounts: Record<string, number> = {}
-          for (let i = 0; i < imageData.length; i += 16) {
-            const r = Math.round(imageData[i] / 10) * 10
-            const g = Math.round(imageData[i + 1] / 10) * 10
-            const b = Math.round(imageData[i + 2] / 10) * 10
-            const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b)
+          
+          // Sample every pixel (40x40 is small enough)
+          for (let i = 0; i < imageData.length; i += 4) {
+            const r = imageData[i]
+            const g = imageData[i + 1]
+            const b = imageData[i + 2]
+            const a = imageData[i + 3]
+            
+            // Skip transparent or very transparent pixels
+            if (a < 128) continue
+
+            // Quantize colors to reduce noise (bins of 32)
+            // Use bin center for representation
+            const rQ = Math.floor(r / 32) * 32 + 16
+            const gQ = Math.floor(g / 32) * 32 + 16
+            const bQ = Math.floor(b / 32) * 32 + 16
+
+            // Clamp values to 0-255
+            const rC = Math.min(255, Math.max(0, rQ))
+            const gC = Math.min(255, Math.max(0, gQ))
+            const bC = Math.min(255, Math.max(0, bQ))
+
+            const hex = `#${((1 << 24) + (rC << 16) + (gC << 8) + bC)
               .toString(16)
               .slice(1)}`
+            
             colorCounts[hex] = (colorCounts[hex] || 0) + 1
           }
+          
           const sorted = Object.entries(colorCounts)
             .sort((a, b) => b[1] - a[1])
             .slice(0, 5)
@@ -86,7 +112,7 @@ export function PhotoDetailModal({
 
   const handleCopyColor = (color: string) => {
     navigator.clipboard.writeText(color)
-    notify(`${t('common.success')}: ${color}`)
+    notify(t('common.copied'))
   }
 
   if (!photo) return null
@@ -197,25 +223,26 @@ export function PhotoDetailModal({
               {/* Close Button - Floating */}
               <button
                 onClick={onClose}
-                className="absolute top-4 right-4 z-50 p-2 text-foreground/50 hover:text-foreground bg-background/50 hover:bg-background backdrop-blur-sm rounded-full transition-all"
+                className="absolute top-4 right-4 z-50 p-2.5 text-foreground/50 hover:text-foreground bg-background/50 hover:bg-background backdrop-blur-sm border border-border hover:border-foreground/30 transition-all rounded-none"
               >
                 <X className="w-5 h-5" />
               </button>
 
               {/* Left Side - Photo Display */}
-              <div className="flex-1 relative bg-muted/30 flex items-center justify-center overflow-hidden h-[50vh] md:h-auto">
-                {/* Checkered pattern background for transparency */}
-                <div
-                  className="absolute inset-0 opacity-[0.03]"
-                  style={{
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%239C92AC' fill-opacity='1' fill-rule='evenodd'%3E%3Cpath d='M0 0h10v10H0V0zm10 10h10v10H10V10z'/%3E%3C/g%3E%3C/svg%3E")`,
-                  }}
+              <div className="flex-1 lg:flex-none lg:w-[70%] relative bg-muted/30 flex items-center justify-center overflow-hidden h-[50vh] md:h-auto">
+                {/* Thumbnail / Placeholder */}
+                <img
+                  src={resolveAssetUrl(photo.thumbnailUrl || photo.url, settings?.cdn_domain)}
+                  alt={photo.title}
+                  className="absolute w-full h-full object-contain p-4 md:p-8 blur-sm scale-105"
                 />
-
+                
+                {/* Full Image */}
                 <img
                   src={resolveAssetUrl(photo.url, settings?.cdn_domain)}
                   alt={photo.title}
-                  className="w-full h-full object-contain p-4 md:p-8"
+                  className={`relative w-full h-full object-contain p-4 md:p-8 transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+                  onLoad={() => setImageLoaded(true)}
                 />
 
                 {/* Mobile Info Toggle */}
@@ -231,10 +258,10 @@ export function PhotoDetailModal({
               <AnimatePresence mode="wait">
                 {showInfo && (
                   <motion.div
-                    initial={{ width: 0, opacity: 0 }}
-                    animate={{ width: 'auto', opacity: 1 }}
-                    exit={{ width: 0, opacity: 0 }}
-                    className="w-full md:w-[350px] lg:w-[400px] border-t md:border-t-0 md:border-l border-border bg-card flex flex-col overflow-hidden"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="w-full md:w-[350px] lg:w-[30%] border-t md:border-t-0 md:border-l border-border bg-card flex flex-col overflow-hidden shrink-0"
                   >
                     <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8 space-y-8">
                       {/* Header */}

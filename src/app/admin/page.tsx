@@ -57,19 +57,18 @@ function AdminDashboard() {
   // Photos State
   const [categories, setCategories] = useState<string[]>([])
   const [photos, setPhotos] = useState<PhotoDto[]>([])
-  const [photosLoading, setPhotosLoading] = useState(false)
-  const [photosError, setPhotosError] = useState('')
-  const [photosViewMode, setPhotosViewMode] = useState<'grid' | 'list'>('grid')
-  const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set())
-  const [photoSearch, setPhotoSearch] = useState('')
-  const [selectedPhoto, setSelectedPhoto] = useState<PhotoDto | null>(null)
-
-  // Delete Dialog State
-  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{
-    photoIds: string[]
-    isBulk: boolean
-  } | null>(null)
-  const [deleteFromStorage, setDeleteFromStorage] = useState(true)
+    const [photosLoading, setPhotosLoading] = useState(false)
+    const [photosError, setPhotosError] = useState('')
+    const [photosViewMode, setPhotosViewMode] = useState<'grid' | 'list'>('grid')
+    const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set())
+    const [selectedPhoto, setSelectedPhoto] = useState<PhotoDto | null>(null)
+    
+    // Delete Dialog State
+    const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{
+      photoIds: string[]
+      isBulk: boolean
+    } | null>(null)
+    const [deleteFromStorage, setDeleteFromStorage] = useState(true)
 
   // Settings State
   const [settings, setSettings] = useState<AdminSettingsDto | null>(null)
@@ -134,18 +133,10 @@ function AdminDashboard() {
 
   useEffect(() => {
     if (activeTab === 'photos' || activeTab === 'logs') refreshPhotos()
-    if (activeTab === 'settings' || activeTab === 'upload') refreshSettings()
+    if (activeTab === 'settings') refreshSettings()
   }, [activeTab, token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Photos Handlers ---
-
-  const filteredPhotos = useMemo(() => {
-    return photos.filter(
-      (p) =>
-        p.title.toLowerCase().includes(photoSearch.toLowerCase()) ||
-        p.category.toLowerCase().includes(photoSearch.toLowerCase())
-    )
-  }, [photos, photoSearch])
 
   const handleDelete = async (photoId?: string) => {
     if (!token) return
@@ -224,10 +215,10 @@ function AdminDashboard() {
   }
 
   const handleSelectAllPhotos = () => {
-    if (selectedPhotoIds.size === filteredPhotos.length) {
+    if (selectedPhotoIds.size === photos.length) {
       setSelectedPhotoIds(new Set())
     } else {
-      setSelectedPhotoIds(new Set(filteredPhotos.map((p) => p.id)))
+      setSelectedPhotoIds(new Set(photos.map((p) => p.id)))
     }
   }
 
@@ -305,18 +296,6 @@ function AdminDashboard() {
             </h1>
           </div>
           <div className="flex items-center space-x-4">
-            {activeTab === 'photos' && (
-              <div className="relative hidden sm:block">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder={t('common.search')}
-                  value={photoSearch}
-                  onChange={(e) => setPhotoSearch(e.target.value)}
-                  className="pl-10 pr-4 py-2 bg-muted border-none text-xs font-mono focus:ring-1 focus:ring-primary w-64 transition-all placeholder:text-muted-foreground/50"
-                />
-              </div>
-            )}
             <button
               onClick={() => router.push('/gallery')}
               className="flex items-center gap-2 px-3 py-1.5 border border-border hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all text-xs font-bold uppercase tracking-widest"
@@ -330,7 +309,8 @@ function AdminDashboard() {
         <div className="p-8 flex-1 overflow-y-auto custom-scrollbar">
           {activeTab === 'photos' && (
             <PhotosTab
-              photos={filteredPhotos}
+              photos={photos}
+              categories={categories}
               loading={photosLoading}
               error={photosError}
               viewMode={photosViewMode}

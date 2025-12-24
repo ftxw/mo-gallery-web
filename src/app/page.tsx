@@ -62,9 +62,11 @@ export default function Home() {
           transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
           className="z-10 text-center mix-blend-difference"
         >
-          <h1 className="text-[15vw] md:text-[12vw] font-serif font-light leading-[0.8] tracking-tighter text-foreground">
-            {t('home.hero_vis')}
-            <span className="block font-sans font-bold text-[4vw] md:text-[2vw] tracking-[0.5em] mt-4 text-primary">
+          <h1 className="flex flex-col items-center">
+            <span className="text-6xl md:text-9xl font-serif font-light leading-none tracking-tighter text-foreground">
+              {t('home.hero_vis')}
+            </span>
+            <span className="block font-sans font-bold text-sm md:text-xl tracking-[0.8em] mt-6 text-primary uppercase opacity-80">
               {t('home.hero_real')}
             </span>
           </h1>

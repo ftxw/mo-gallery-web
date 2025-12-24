@@ -27,7 +27,7 @@ import {
   type PhotoDto,
 } from '@/lib/api'
 
-import { Toast, type Notification } from '@/components/admin/Toast'
+import { Toast, type Notification } from '@/components/Toast'
 import { AdminSidebar } from '@/components/admin/AdminSidebar'
 import { PhotosTab } from './PhotosTab'
 import { UploadTab } from './UploadTab'

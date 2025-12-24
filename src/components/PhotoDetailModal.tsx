@@ -20,6 +20,7 @@ import { PhotoDto, resolveAssetUrl } from '@/lib/api'
 import { useSettings } from '@/contexts/SettingsContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { formatFileSize } from '@/lib/utils'
+import { Toast, type Notification } from '@/components/Toast'
 
 interface PhotoDetailModalProps {
   photo: PhotoDto | null
@@ -35,6 +36,58 @@ export function PhotoDetailModal({
   const { settings } = useSettings()
   const { t, locale } = useLanguage()
   const [showInfo, setShowInfo] = useState(true)
+  const [dominantColors, setDominantColors] = useState<string[]>([])
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const resolvedCdnDomain = settings?.cdn_domain?.trim() || undefined
+
+  const notify = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    const id = Math.random().toString(36).substring(2, 9)
+    setNotifications((prev) => [...prev, { id, message, type }])
+    setTimeout(() => setNotifications((prev) => prev.filter((n) => n.id !== id)), 2000)
+  }
+
+  useEffect(() => {
+    if (photo && isOpen) {
+      const img = new Image()
+      img.crossOrigin = 'Anonymous'
+      img.src = resolveAssetUrl(photo.url, resolvedCdnDomain)
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas')
+          const ctx = canvas.getContext('2d', { willReadFrequently: true })
+          if (!ctx) return
+          canvas.width = 40
+          canvas.height = 40
+          ctx.drawImage(img, 0, 0, 40, 40)
+          const imageData = ctx.getImageData(0, 0, 40, 40).data
+          const colorCounts: Record<string, number> = {}
+          for (let i = 0; i < imageData.length; i += 16) {
+            const r = Math.round(imageData[i] / 10) * 10
+            const g = Math.round(imageData[i + 1] / 10) * 10
+            const b = Math.round(imageData[i + 2] / 10) * 10
+            const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b)
+              .toString(16)
+              .slice(1)}`
+            colorCounts[hex] = (colorCounts[hex] || 0) + 1
+          }
+          const sorted = Object.entries(colorCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map((c) => c[0])
+          setDominantColors(sorted)
+        } catch (e) {
+          console.error('Palette extraction failed', e)
+        }
+      }
+    } else {
+      setDominantColors([])
+    }
+  }, [photo, isOpen, resolvedCdnDomain])
+
+  const handleCopyColor = (color: string) => {
+    navigator.clipboard.writeText(color)
+    notify(`${t('common.success')}: ${color}`)
+  }
 
   if (!photo) return null
 
@@ -118,24 +171,23 @@ export function PhotoDetailModal({
   ].filter((item) => item.show)
 
   return (
-    <AnimatePresence>
+    <>
+      <Toast
+        notifications={notifications}
+        remove={(id) =>
+          setNotifications((prev) => prev.filter((n) => n.id !== id))
+        }
+      />
       {isOpen && (
         <>
           {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+          <div
             onClick={onClose}
             className="fixed inset-0 z-[100] bg-background/90 backdrop-blur-md"
           />
 
           {/* Modal Container */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
-            transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
+          <div
             className="fixed inset-0 z-[110] flex items-center justify-center p-4 md:p-8 pointer-events-none"
           >
             <div
@@ -160,8 +212,7 @@ export function PhotoDetailModal({
                   }}
                 />
 
-                <motion.img
-                  layoutId={`photo-${photo.id}`}
+                <img
                   src={resolveAssetUrl(photo.url, settings?.cdn_domain)}
                   alt={photo.title}
                   className="w-full h-full object-contain p-4 md:p-8"
@@ -207,6 +258,38 @@ export function PhotoDetailModal({
                         <h2 className="font-serif text-3xl leading-tight text-foreground">
                           {photo.title}
                         </h2>
+                      </div>
+
+                      {/* Palette */}
+                      <div className="space-y-6">
+                        <h3 className="text-[10px] font-bold tracking-[0.2em] uppercase text-muted-foreground border-b border-border pb-2">
+                          {t('gallery.palette')}
+                        </h3>
+                        <div className="flex flex-wrap gap-4">
+                          {dominantColors.length > 0
+                            ? dominantColors.map((color, i) => (
+                                <div
+                                  key={i}
+                                  className="flex flex-col items-center gap-2 cursor-pointer group"
+                                  onClick={() => handleCopyColor(color)}
+                                  title="Click to copy"
+                                >
+                                  <div
+                                    className="w-10 h-10 rounded-full border border-border shadow-sm transition-transform group-hover:scale-110"
+                                    style={{ backgroundColor: color }}
+                                  />
+                                  <span className="text-[10px] font-mono text-muted-foreground group-hover:text-foreground transition-colors uppercase">
+                                    {color}
+                                  </span>
+                                </div>
+                              ))
+                            : [...Array(5)].map((_, i) => (
+                                <div
+                                  key={i}
+                                  className="w-10 h-10 rounded-full bg-muted animate-pulse"
+                                />
+                              ))}
+                        </div>
                       </div>
 
                       {/* Technical Specs - Grid Layout */}
@@ -284,9 +367,9 @@ export function PhotoDetailModal({
                 )}
               </AnimatePresence>
             </div>
-          </motion.div>
+          </div>
         </>
       )}
-    </AnimatePresence>
+    </>
   )
 }

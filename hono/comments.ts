@@ -100,7 +100,7 @@ comments.post('/photos/:photoId/comments', async (c) => {
   } catch (error) {
     console.error('Create comment error:', error)
     if (error instanceof z.ZodError) {
-      return c.json({ error: 'Validation error', details: error.errors }, 400)
+      return c.json({ error: 'Validation error', details: error.issues }, 400)
     }
     return c.json({ error: 'Internal server error' }, 500)
   }
@@ -161,7 +161,7 @@ comments.patch('/admin/comments/:id/status', async (c) => {
   } catch (error) {
     console.error('Update comment status error:', error)
     if (error instanceof z.ZodError) {
-      return c.json({ error: 'Validation error', details: error.errors }, 400)
+      return c.json({ error: 'Validation error', details: error.issues }, 400)
     }
     return c.json({ error: 'Internal server error' }, 500)
   }

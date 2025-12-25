@@ -201,7 +201,7 @@ stories.post('/admin/stories', async (c) => {
   } catch (error) {
     console.error('Create story error:', error)
     if (error instanceof z.ZodError) {
-      return c.json({ error: 'Validation error', details: error.errors }, 400)
+      return c.json({ error: 'Validation error', details: error.issues }, 400)
     }
     return c.json({ error: 'Internal server error' }, 500)
   }
@@ -238,7 +238,7 @@ stories.patch('/admin/stories/:id', async (c) => {
   } catch (error) {
     console.error('Update story error:', error)
     if (error instanceof z.ZodError) {
-      return c.json({ error: 'Validation error', details: error.errors }, 400)
+      return c.json({ error: 'Validation error', details: error.issues }, 400)
     }
     return c.json({ error: 'Internal server error' }, 500)
   }
@@ -298,7 +298,7 @@ stories.post('/admin/stories/:id/photos', async (c) => {
   } catch (error) {
     console.error('Add photos to story error:', error)
     if (error instanceof z.ZodError) {
-      return c.json({ error: 'Validation error', details: error.errors }, 400)
+      return c.json({ error: 'Validation error', details: error.issues }, 400)
     }
     return c.json({ error: 'Internal server error' }, 500)
   }

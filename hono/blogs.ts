@@ -126,7 +126,7 @@ blogs.post('/admin/blogs', async (c) => {
   } catch (error) {
     console.error('Create blog error:', error)
     if (error instanceof z.ZodError) {
-      return c.json({ error: 'Validation error', details: error.errors }, 400)
+      return c.json({ error: 'Validation error', details: error.issues }, 400)
     }
     return c.json({ error: 'Internal server error' }, 500)
   }
@@ -151,7 +151,7 @@ blogs.patch('/admin/blogs/:id', async (c) => {
   } catch (error) {
     console.error('Update blog error:', error)
     if (error instanceof z.ZodError) {
-      return c.json({ error: 'Validation error', details: error.errors }, 400)
+      return c.json({ error: 'Validation error', details: error.issues }, 400)
     }
     return c.json({ error: 'Internal server error' }, 500)
   }

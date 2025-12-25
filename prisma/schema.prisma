@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -17,36 +18,36 @@ model User {
 }
 
 model Photo {
-  id              String     @id @default(uuid())
+  id              String   @id @default(uuid())
   title           String
   url             String
   thumbnailUrl    String?
-  storageProvider String     @default("local")
+  storageProvider String   @default("local")
   storageKey      String?
   width           Int
   height          Int
   size            Int?
-  isFeatured      Boolean    @default(false)
-  createdAt       DateTime   @default(now())
+  isFeatured      Boolean  @default(false)
+  createdAt       DateTime @default(now())
 
   // EXIF Information
-  cameraMake      String?
-  cameraModel     String?
-  lens            String?
-  focalLength     String?
-  aperture        String?
-  shutterSpeed    String?
-  iso             Int?
-  takenAt         DateTime?
-  latitude        Float?
-  longitude       Float?
-  orientation     Int?
-  software        String?
-  exifRaw         String?
+  cameraMake   String?
+  cameraModel  String?
+  lens         String?
+  focalLength  String?
+  aperture     String?
+  shutterSpeed String?
+  iso          Int?
+  takenAt      DateTime?
+  latitude     Float?
+  longitude    Float?
+  orientation  Int?
+  software     String?
+  exifRaw      String?
 
-  categories      Category[]
-  stories         Story[]    @relation("PhotoStories")
-  comments        Comment[]
+  categories Category[]
+  stories    Story[]    @relation("PhotoStories")
+  comments   Comment[]
 }
 
 model Category {
@@ -64,12 +65,12 @@ model Setting {
 model Story {
   id          String   @id @default(uuid())
   title       String
-  content     String   // Markdown content
+  content     String // Markdown content
   isPublished Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  photos      Photo[]  @relation("PhotoStories")
+  photos Photo[] @relation("PhotoStories")
 
   @@index([isPublished])
   @@index([createdAt])
@@ -86,7 +87,7 @@ model Comment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  photo     Photo    @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  photo Photo @relation(fields: [photoId], references: [id], onDelete: Cascade)
 
   @@index([photoId])
   @@index([status])
@@ -96,7 +97,7 @@ model Comment {
 model Blog {
   id          String   @id @default(uuid())
   title       String
-  content     String   // Markdown content
+  content     String // Markdown content
   category    String   @default("未分类") // Blog category
   tags        String   @default("") // Comma-separated tags
   isPublished Boolean  @default(false)

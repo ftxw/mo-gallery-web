@@ -50,6 +50,8 @@ async function getStorageConfig(
       config.r2SecretAccessKey = settingsMap.r2_secret_access_key
       config.r2Bucket = settingsMap.r2_bucket
       config.r2Endpoint = settingsMap.r2_endpoint
+      config.r2PublicUrl = settingsMap.r2_public_url
+      config.r2Path = settingsMap.r2_path
       break
   }
 

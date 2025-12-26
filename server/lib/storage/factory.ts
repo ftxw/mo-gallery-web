@@ -7,6 +7,7 @@
 import { StorageProvider, StorageConfig, StorageError } from './types'
 import { LocalStorageProvider } from './local'
 import { GithubStorageProvider } from './github'
+import { R2StorageProvider } from './r2'
 
 export class StorageProviderFactory {
   static create(config: StorageConfig): StorageProvider {
@@ -18,10 +19,7 @@ export class StorageProviderFactory {
         return new GithubStorageProvider(config)
 
       case 'r2':
-        throw new StorageError(
-          'R2 provider not yet implemented',
-          'PROVIDER_NOT_IMPLEMENTED'
-        )
+        return new R2StorageProvider(config)
 
       default:
         throw new StorageError(

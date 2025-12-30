@@ -95,6 +95,11 @@ export function UploadQueueProvider({
     // Use a unique key for the batch
     const batchKey = storyId || 'no-story'
 
+    // Check if already processed
+    if (completedBatchesRef.current.has(batchKey)) {
+      return
+    }
+
     setTasks((currentTasks) => {
       const batchTasks = currentTasks.filter((t) => (t.storyId || 'no-story') === batchKey)
       const completedTasks = batchTasks.filter((t) => t.status === 'completed')
@@ -104,19 +109,18 @@ export function UploadQueueProvider({
 
       // Check if batch is complete and hasn't been processed yet
       if (pendingOrUploading.length === 0 && completedTasks.length > 0) {
-        if (!completedBatchesRef.current.has(batchKey)) {
-          completedBatchesRef.current.add(batchKey)
+        // Mark as processed immediately to prevent duplicate calls
+        completedBatchesRef.current.add(batchKey)
 
-          const photoIds = completedTasks
-            .map((t) => t.photoId)
-            .filter((id): id is string => !!id)
+        const photoIds = completedTasks
+          .map((t) => t.photoId)
+          .filter((id): id is string => !!id)
 
-          if (photoIds.length > 0 && onUploadCompleteRef.current) {
-            // Schedule callback outside of render
-            setTimeout(() => {
-              onUploadCompleteRef.current?.(photoIds, storyId)
-            }, 0)
-          }
+        if (photoIds.length > 0 && onUploadCompleteRef.current) {
+          // Schedule callback outside of render
+          setTimeout(() => {
+            onUploadCompleteRef.current?.(photoIds, storyId)
+          }, 0)
         }
       }
 

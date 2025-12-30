@@ -129,14 +129,14 @@ export function PhotosTab({
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="appearance-none pl-3 pr-8 py-2 bg-muted/30 border border-border focus:border-primary outline-none text-[10px] font-bold uppercase tracking-widest cursor-pointer"
+                className="appearance-none pl-3 pr-8 py-2 bg-muted/30 border border-border focus:border-primary outline-none text-xs font-mono cursor-pointer transition-all hover:bg-muted/50"
               >
                 <option value="全部">分类: {t('gallery.all')}</option>
                 {categories.filter(c => c !== '全部').map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none group-hover:text-foreground transition-colors" />
             </div>
 
             {/* Channel Filter */}
@@ -144,14 +144,14 @@ export function PhotosTab({
               <select
                 value={channelFilter}
                 onChange={(e) => setChannelFilter(e.target.value)}
-                className="appearance-none pl-3 pr-8 py-2 bg-muted/30 border border-border focus:border-primary outline-none text-[10px] font-bold uppercase tracking-widest cursor-pointer"
+                className="appearance-none pl-3 pr-8 py-2 bg-muted/30 border border-border focus:border-primary outline-none text-xs font-mono cursor-pointer transition-all hover:bg-muted/50"
               >
                 <option value="全部">渠道: 全部</option>
                 <option value="local">Local</option>
                 <option value="r2">Cloudflare R2</option>
                 <option value="github">GitHub</option>
               </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none group-hover:text-foreground transition-colors" />
             </div>
 
             {/* Featured Filter (Switch) */}
@@ -245,14 +245,14 @@ export function PhotosTab({
               viewMode === 'grid' ? (
                 <div
                   key={photo.id}
-                  className={`group relative cursor-pointer bg-muted border ${
+                  className={`group relative cursor-pointer bg-muted border overflow-hidden ${
                     selectedIds.has(photo.id)
                       ? 'border-primary ring-1 ring-primary'
                       : 'border-transparent'
                   }`}
                   onClick={() => onPreview(photo)}
                 >
-                  <div className="aspect-[4/5] overflow-hidden">
+                  <div className="aspect-[4/5]">
                     <img
                       src={resolveAssetUrl(
                         photo.thumbnailUrl || photo.url,
@@ -263,7 +263,6 @@ export function PhotosTab({
                       loading="lazy"
                     />
                   </div>
-                  <div className="absolute inset-0 bg-primary/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
                   <div
                     className="absolute top-2 left-2 z-10"
                     onClick={(e) => e.stopPropagation()}
@@ -275,13 +274,17 @@ export function PhotosTab({
                       className="w-4 h-4 accent-primary cursor-pointer border-white"
                     />
                   </div>
+                  {/* Gradient Overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+
+                  {/* Action Buttons */}
                   <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
                         onToggleFeatured(photo)
                       }}
-                      className={`p-2 bg-background/90 backdrop-blur-sm text-foreground hover:text-amber-500 transition-colors ${
+                      className={`p-2 bg-black/50 backdrop-blur-sm text-white hover:text-amber-500 transition-colors ${
                         photo.isFeatured ? 'text-amber-500' : ''
                       }`}
                     >
@@ -296,30 +299,20 @@ export function PhotosTab({
                         e.stopPropagation()
                         onDelete(photo.id)
                       }}
-                      className="p-2 bg-background/90 backdrop-blur-sm text-foreground hover:text-destructive transition-colors"
+                      className="p-2 bg-black/50 backdrop-blur-sm text-white hover:text-destructive transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
-                  <div className="absolute bottom-0 left-0 w-full p-3 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0 pointer-events-none">
-                    <div className="bg-background/90 p-2 backdrop-blur-sm">
-                      <h3 className="text-[10px] font-bold uppercase tracking-widest truncate text-foreground">
-                        {photo.title}
-                      </h3>
-                      <div className="flex gap-1 mt-1">
-                        {photo.category
-                          .split(',')
-                          .slice(0, 1)
-                          .map((cat) => (
-                            <span
-                              key={cat}
-                              className="text-[8px] font-mono text-muted-foreground uppercase"
-                            >
-                              {cat}
-                            </span>
-                          ))}
-                      </div>
-                    </div>
+
+                  {/* Bottom Info */}
+                  <div className="absolute bottom-0 left-0 w-full p-4 opacity-0 group-hover:opacity-100 transition-all duration-500 translate-y-4 group-hover:translate-y-0 pointer-events-none z-10">
+                    <p className="text-[9px] font-black text-primary uppercase tracking-[0.3em] mb-1">
+                      {photo.category.split(',')[0]}
+                    </p>
+                    <h3 className="text-sm font-serif text-white leading-tight truncate">
+                      {photo.title}
+                    </h3>
                   </div>
                   {photo.isFeatured && (
                     <div className="absolute top-2 left-8 px-1.5 py-0.5 bg-amber-500 text-white text-[8px] font-black uppercase tracking-widest z-10">

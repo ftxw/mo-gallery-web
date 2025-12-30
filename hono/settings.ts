@@ -50,6 +50,8 @@ settings.get('/', async (c) => {
       r2_secret_access_key: '',
       r2_bucket: '',
       r2_endpoint: '',
+      r2_public_url: '',
+      r2_path: '',
       github_token: '',
       github_repo: '',
       github_path: '',

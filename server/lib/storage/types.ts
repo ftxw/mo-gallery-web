@@ -34,11 +34,13 @@ export interface StorageConfig {
   githubAccessMethod?: 'raw' | 'jsdelivr' | 'pages'
   githubPagesUrl?: string
 
-  // R2 config (for future implementation)
+  // R2 config
   r2AccessKeyId?: string
   r2SecretAccessKey?: string
   r2Bucket?: string
   r2Endpoint?: string
+  r2PublicUrl?: string
+  r2Path?: string
 }
 
 export interface StorageProvider {

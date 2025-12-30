@@ -13,12 +13,12 @@ import {
   Plus,
   BookOpen,
   Minimize2,
-  ChevronDown,
 } from 'lucide-react'
 import imageCompression from 'browser-image-compression'
 import { AdminSettingsDto, getAdminStories, type StoryDto } from '@/lib/api'
 import { UploadFileItem } from '@/components/admin/UploadFileItem'
 import { useUploadQueue } from '@/contexts/UploadQueueContext'
+import { CustomSelect } from '@/components/ui/CustomSelect'
 
 interface UploadTabProps {
   token: string | null
@@ -103,16 +103,18 @@ export function UploadTab({
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node
       if (
+        isCategoryDropdownOpen &&
         categoryContainerRef.current &&
-        !categoryContainerRef.current.contains(event.target as Node)
+        !categoryContainerRef.current.contains(target)
       ) {
         setIsCategoryDropdownOpen(false)
       }
     }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+    document.addEventListener('click', handleClickOutside, true)
+    return () => document.removeEventListener('click', handleClickOutside, true)
+  }, [isCategoryDropdownOpen])
 
   const addCategory = (cat: string) => {
     const trimmed = cat.trim()
@@ -365,22 +367,20 @@ export function UploadTab({
                 <BookOpen className="w-3 h-3" />
                 照片故事 (可选)
               </label>
-              <div className="relative group">
-                <select
-                  value={uploadStoryId}
-                  onChange={(e) => setUploadStoryId(e.target.value)}
-                  disabled={loadingStories}
-                  className="appearance-none pl-3 pr-8 py-2 bg-muted/30 border border-border focus:border-primary outline-none text-xs font-mono cursor-pointer transition-all hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed w-full [&>option]:bg-background [&>option]:text-foreground"
-                >
-                  <option value="">不关联故事</option>
-                  {stories.map((story) => (
-                    <option key={story.id} value={story.id}>
-                      {story.title} {!story.isPublished && '(草稿)'}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none group-hover:text-foreground transition-colors" />
-              </div>
+              <CustomSelect
+                value={uploadStoryId}
+                onChange={setUploadStoryId}
+                disabled={loadingStories}
+                placeholder="不关联故事"
+                options={[
+                  { value: '', label: '不关联故事' },
+                  ...stories.map((story) => ({
+                    value: story.id,
+                    label: story.title,
+                    suffix: !story.isPublished ? '(草稿)' : undefined,
+                  })),
+                ]}
+              />
               {loadingStories && (
                 <p className="mt-2 text-[10px] text-muted-foreground">
                   加载故事列表...
@@ -392,18 +392,15 @@ export function UploadTab({
                 <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">
                   {t('admin.storage_provider')}
                 </label>
-                <div className="relative group">
-                  <select
-                    value={uploadSource}
-                    onChange={(e) => setUploadSource(e.target.value)}
-                    className="appearance-none pl-3 pr-8 py-2 bg-muted/30 border border-border focus:border-primary outline-none text-xs font-mono cursor-pointer transition-all hover:bg-muted/50 w-full [&>option]:bg-background [&>option]:text-foreground"
-                  >
-                    <option value="local">Local Storage</option>
-                    <option value="r2">Cloudflare R2</option>
-                    <option value="github">GitHub</option>
-                  </select>
-                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none group-hover:text-foreground transition-colors" />
-                </div>
+                <CustomSelect
+                  value={uploadSource}
+                  onChange={setUploadSource}
+                  options={[
+                    { value: 'local', label: 'Local Storage' },
+                    { value: 'r2', label: 'Cloudflare R2' },
+                    { value: 'github', label: 'GitHub' },
+                  ]}
+                />
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">

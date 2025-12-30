@@ -165,12 +165,18 @@ export function UploadTab({
         try {
           // Only compress if file is larger than target size
           if (item.file.size > maxSizeMB * 1024 * 1024) {
-            const compressedFile = await imageCompression(item.file, {
+            const compressedBlob = await imageCompression(item.file, {
               maxSizeMB: maxSizeMB,
               maxWidthOrHeight: 4096,
               useWebWorker: true,
               preserveExif: true,
             })
+            // Ensure the compressed result is a File with the original name
+            const compressedFile = new File(
+              [compressedBlob],
+              item.file.name,
+              { type: compressedBlob.type, lastModified: Date.now() }
+            )
             compressedFiles.push({ id: item.id, file: compressedFile })
           } else {
             compressedFiles.push(item)
@@ -186,7 +192,7 @@ export function UploadTab({
     }
 
     // Add tasks to the upload queue
-    addTasks({
+    await addTasks({
       files: filesToUpload,
       title: uploadTitle.trim(),
       categories: uploadCategories,

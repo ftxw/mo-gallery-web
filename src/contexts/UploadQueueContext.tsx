@@ -20,6 +20,7 @@ export interface UploadTask {
   storageProvider?: string
   storagePath?: string
   storyId?: string
+  batchId: string // Unique batch identifier
   // Result
   photoId?: string
 }
@@ -67,7 +68,7 @@ export function UploadQueueProvider({
   const activeUploadsRef = useRef(0)
   const tokenRef = useRef<string>('')
   const onUploadCompleteRef = useRef(onUploadComplete)
-  const completedBatchesRef = useRef<Set<string>>(new Set())
+  const notifiedBatchesRef = useRef<Set<string>>(new Set())
 
   // Keep the ref updated
   useEffect(() => {
@@ -91,41 +92,16 @@ export function UploadQueueProvider({
     )
   }, [])
 
-  const checkBatchComplete = useCallback((storyId: string | undefined) => {
-    // Use a unique key for the batch
-    const batchKey = storyId || 'no-story'
-
-    // Check if already processed
-    if (completedBatchesRef.current.has(batchKey)) {
+  const notifyBatchComplete = useCallback((batchId: string, storyId: string | undefined, photoIds: string[]) => {
+    // Double-check we haven't already notified for this batch
+    if (notifiedBatchesRef.current.has(batchId)) {
       return
     }
+    notifiedBatchesRef.current.add(batchId)
 
-    setTasks((currentTasks) => {
-      const batchTasks = currentTasks.filter((t) => (t.storyId || 'no-story') === batchKey)
-      const completedTasks = batchTasks.filter((t) => t.status === 'completed')
-      const pendingOrUploading = batchTasks.filter(
-        (t) => t.status === 'pending' || t.status === 'uploading'
-      )
-
-      // Check if batch is complete and hasn't been processed yet
-      if (pendingOrUploading.length === 0 && completedTasks.length > 0) {
-        // Mark as processed immediately to prevent duplicate calls
-        completedBatchesRef.current.add(batchKey)
-
-        const photoIds = completedTasks
-          .map((t) => t.photoId)
-          .filter((id): id is string => !!id)
-
-        if (photoIds.length > 0 && onUploadCompleteRef.current) {
-          // Schedule callback outside of render
-          setTimeout(() => {
-            onUploadCompleteRef.current?.(photoIds, storyId)
-          }, 0)
-        }
-      }
-
-      return currentTasks
-    })
+    if (photoIds.length > 0 && onUploadCompleteRef.current) {
+      onUploadCompleteRef.current(photoIds, storyId)
+    }
   }, [])
 
   const processQueue = useCallback(() => {
@@ -167,21 +143,35 @@ export function UploadQueueProvider({
         },
       })
 
-      setTasks((prev) =>
-        prev.map((t) =>
+      // Update task status and check batch completion
+      setTasks((prev) => {
+        const updated = prev.map((t) =>
           t.id === task.id
             ? { ...t, status: 'completed' as UploadTaskStatus, progress: 100, photoId: photo.id }
             : t
         )
-      )
 
-      // Check if batch is complete after a short delay
-      setTimeout(() => {
-        checkBatchComplete(task.storyId)
-      }, 100)
+        // Check if this batch is complete
+        const batchTasks = updated.filter((t) => t.batchId === task.batchId)
+        const allDone = batchTasks.every((t) => t.status === 'completed' || t.status === 'failed')
+
+        if (allDone && !notifiedBatchesRef.current.has(task.batchId)) {
+          const completedTasks = batchTasks.filter((t) => t.status === 'completed')
+          const photoIds = completedTasks
+            .map((t) => t.photoId)
+            .filter((id): id is string => !!id)
+
+          // Schedule notification outside of setState
+          setTimeout(() => {
+            notifyBatchComplete(task.batchId, task.storyId, photoIds)
+          }, 0)
+        }
+
+        return updated
+      })
     } catch (err) {
-      setTasks((prev) =>
-        prev.map((t) =>
+      setTasks((prev) => {
+        const updated = prev.map((t) =>
           t.id === task.id
             ? {
                 ...t,
@@ -190,7 +180,26 @@ export function UploadQueueProvider({
               }
             : t
         )
-      )
+
+        // Check if this batch is complete (all done, even with failures)
+        const batchTasks = updated.filter((t) => t.batchId === task.batchId)
+        const allDone = batchTasks.every((t) => t.status === 'completed' || t.status === 'failed')
+
+        if (allDone && !notifiedBatchesRef.current.has(task.batchId)) {
+          const completedTasks = batchTasks.filter((t) => t.status === 'completed')
+          const photoIds = completedTasks
+            .map((t) => t.photoId)
+            .filter((id): id is string => !!id)
+
+          if (photoIds.length > 0) {
+            setTimeout(() => {
+              notifyBatchComplete(task.batchId, task.storyId, photoIds)
+            }, 0)
+          }
+        }
+
+        return updated
+      })
     } finally {
       activeUploadsRef.current--
       // Process next in queue
@@ -210,9 +219,8 @@ export function UploadQueueProvider({
     }) => {
       tokenRef.current = params.token
 
-      // Reset batch tracking for this story
-      const batchKey = params.storyId || 'no-story'
-      completedBatchesRef.current.delete(batchKey)
+      // Generate a unique batch ID for this upload session
+      const batchId = `batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
       const newTasks: UploadTask[] = await Promise.all(
         params.files.map(async (item) => {
@@ -234,6 +242,7 @@ export function UploadQueueProvider({
             storageProvider: params.storageProvider,
             storagePath: params.storagePath,
             storyId: params.storyId,
+            batchId,
           }
         })
       )
@@ -251,12 +260,11 @@ export function UploadQueueProvider({
     (taskId: string, token: string) => {
       tokenRef.current = token
 
-      // Get the task's storyId and reset batch tracking
       setTasks((prev) => {
         const task = prev.find((t) => t.id === taskId)
         if (task) {
-          const batchKey = task.storyId || 'no-story'
-          completedBatchesRef.current.delete(batchKey)
+          // Remove the old batch from notified set so it can notify again
+          notifiedBatchesRef.current.delete(task.batchId)
         }
         return prev.map((t) =>
           t.id === taskId
@@ -297,7 +305,7 @@ export function UploadQueueProvider({
       })
       return []
     })
-    completedBatchesRef.current.clear()
+    notifiedBatchesRef.current.clear()
   }, [])
 
   return (

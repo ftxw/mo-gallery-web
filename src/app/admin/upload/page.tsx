@@ -23,7 +23,7 @@ export default function UploadPage() {
 
   const handleStoryCreated = (storyId: string) => {
     // Navigate to story editor
-    router.push(`/admin/logs?edit=${storyId}`)
+    router.push(`/admin/logs?editStory=${storyId}`)
   }
 
   return (

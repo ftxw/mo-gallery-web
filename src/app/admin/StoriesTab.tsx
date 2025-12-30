@@ -27,9 +27,10 @@ interface StoriesTabProps {
   token: string | null
   t: (key: string) => string
   notify: (message: string, type?: 'success' | 'error' | 'info') => void
+  editStoryId?: string
 }
 
-export function StoriesTab({ token, t, notify }: StoriesTabProps) {
+export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
   const [stories, setStories] = useState<StoryDto[]>([])
   const [loading, setLoading] = useState(true)
   const [currentStory, setCurrentStory] = useState<StoryDto | null>(null)
@@ -40,6 +41,18 @@ export function StoriesTab({ token, t, notify }: StoriesTabProps) {
   useEffect(() => {
     loadStories()
   }, [token])
+
+  // Handle editStoryId - auto-open editor for the specified story
+  useEffect(() => {
+    if (editStoryId && stories.length > 0) {
+      const storyToEdit = stories.find(s => s.id === editStoryId)
+      if (storyToEdit) {
+        setCurrentStory({ ...storyToEdit })
+        setStoryEditMode('editor')
+        setStoryPreviewActive(false)
+      }
+    }
+  }, [editStoryId, stories])
 
   async function loadStories() {
     if (!token) return

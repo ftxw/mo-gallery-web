@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowRight, Calendar } from 'lucide-react'
+import { Calendar } from 'lucide-react'
 import { PhotoDto, PublicSettingsDto, resolveAssetUrl } from '@/lib/api'
 
 interface TimelineViewProps {
@@ -45,8 +45,8 @@ export function TimelineView({ photos, settings, onPhotoClick }: TimelineViewPro
 
   return (
     <div className="relative">
-      {/* Timeline Line */}
-      <div className="absolute left-4 md:left-1/2 top-0 bottom-0 w-px bg-border md:-translate-x-px" />
+      {/* Timeline Line - Left side */}
+      <div className="absolute left-4 md:left-8 top-0 bottom-0 w-px bg-border" />
 
       <AnimatePresence mode="popLayout">
         {groupedPhotos.map((group, groupIndex) => (
@@ -55,27 +55,24 @@ export function TimelineView({ photos, settings, onPhotoClick }: TimelineViewPro
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: groupIndex * 0.1 }}
-            className="relative mb-16"
+            className="relative mb-12 md:mb-16"
           >
             {/* Timeline Node */}
-            <div className="absolute left-4 md:left-1/2 -translate-x-1/2 w-3 h-3 bg-primary border-4 border-background z-10" />
+            <div className="absolute left-4 md:left-8 -translate-x-1/2 w-3 h-3 bg-primary border-4 border-background z-10" />
 
             {/* Date Header */}
-            <div className={`flex items-center gap-4 mb-8 ${groupIndex % 2 === 0 ? 'md:flex-row-reverse' : ''}`}>
-              <div className={`ml-12 md:ml-0 md:w-1/2 ${groupIndex % 2 === 0 ? 'md:pl-12' : 'md:pr-12 md:text-right'}`}>
-                <div className="inline-flex items-center gap-3 border border-border px-4 py-2 bg-background">
-                  <Calendar className="w-4 h-4 text-primary" />
-                  <span className="text-xs font-black uppercase tracking-[0.3em]">
-                    {formatMonth(group.month)} {group.year}
-                  </span>
-                </div>
+            <div className="ml-10 md:ml-16 mb-6">
+              <div className="inline-flex items-center gap-3 border border-border px-4 py-2 bg-background">
+                <Calendar className="w-4 h-4 text-primary" />
+                <span className="text-xs font-black uppercase tracking-[0.3em]">
+                  {formatMonth(group.month)} {group.year}
+                </span>
               </div>
-              <div className="hidden md:block md:w-1/2" />
             </div>
 
-            {/* Photos Grid */}
-            <div className={`ml-12 md:ml-0 md:w-1/2 ${groupIndex % 2 === 0 ? 'md:ml-auto md:pl-12' : 'md:pr-12'}`}>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {/* Photos Grid - Full width */}
+            <div className="ml-10 md:ml-16">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4">
                 {group.photos.map((photo, index) => (
                   <motion.div
                     key={photo.id}

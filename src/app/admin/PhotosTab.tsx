@@ -259,7 +259,7 @@ export function PhotosTab({
                         resolvedCdnDomain
                       )}
                       alt={photo.title}
-                      className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105 grayscale group-hover:grayscale-0"
+                      className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                       loading="lazy"
                     />
                   </div>
@@ -346,7 +346,7 @@ export function PhotosTab({
                         resolvedCdnDomain
                       )}
                       alt=""
-                      className="w-full h-full object-cover grayscale"
+                      className="w-full h-full object-cover"
                     />
                   </div>
                   <div className="flex-1 min-w-0">

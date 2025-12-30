@@ -70,7 +70,7 @@ export default function Footer() {
           <p className="font-sans text-[10px] md:text-xs text-muted-foreground tracking-[0.1em] uppercase">
             © {currentYear} {siteTitle} ·{' '}
             <a
-              href="https://github.com/ushaio/mo-gallary-web"
+              href="https://github.com/ushaio/mo-gallery-web"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-foreground transition-colors duration-300"

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { BookText, BookOpen } from 'lucide-react'
 import { PhotoDto, PublicSettingsDto } from '@/lib/api'
 import { BlogTab } from './BlogTab'
@@ -12,10 +12,19 @@ interface LogsTabProps {
   settings: PublicSettingsDto | null
   t: (key: string) => string
   notify: (message: string, type?: 'success' | 'error' | 'info') => void
+  initialTab?: 'blog' | 'stories'
+  editStoryId?: string
 }
 
-export function LogsTab({ token, photos, settings, t, notify }: LogsTabProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'blog' | 'stories'>('blog')
+export function LogsTab({ token, photos, settings, t, notify, initialTab, editStoryId }: LogsTabProps) {
+  const [activeSubTab, setActiveSubTab] = useState<'blog' | 'stories'>(initialTab || 'blog')
+
+  // Update tab when initialTab changes (e.g., from URL params)
+  useEffect(() => {
+    if (initialTab) {
+      setActiveSubTab(initialTab)
+    }
+  }, [initialTab])
 
   return (
     <div className="space-y-6">
@@ -60,6 +69,7 @@ export function LogsTab({ token, photos, settings, t, notify }: LogsTabProps) {
             token={token}
             t={t}
             notify={notify}
+            editStoryId={editStoryId}
           />
         )}
       </div>

@@ -19,6 +19,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   ApiUnauthorizedError,
+  addPhotosToStory,
   deletePhoto,
   getAdminSettings,
   getCategories,
@@ -31,6 +32,8 @@ import {
 import { Toast, type Notification } from '@/components/Toast'
 import { DeleteConfirmDialog } from '@/components/admin/DeleteConfirmDialog'
 import { PhotoDetailModal } from '@/components/PhotoDetailModal'
+import { UploadQueueProvider, useUploadQueue } from '@/contexts/UploadQueueContext'
+import { UploadProgressPopup } from '@/components/admin/UploadProgressPopup'
 
 // Admin Context for shared state
 interface AdminContextType {
@@ -348,15 +351,28 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
     handleUnauthorized,
   }
 
+  const handleUploadComplete = useCallback(async (photoIds: string[], storyId?: string) => {
+    if (storyId && token && photoIds.length > 0) {
+      try {
+        await addPhotosToStory(token, storyId, photoIds)
+      } catch (err) {
+        console.error('Failed to associate photos with story:', err)
+      }
+    }
+    await refreshPhotos()
+    notify(`${photoIds.length} ${t('admin.notify_upload_success')}`)
+  }, [token, refreshPhotos, notify, t])
+
   return (
-    <AdminContext.Provider value={contextValue}>
-      <div className="flex h-screen overflow-hidden bg-background text-foreground">
-        <Toast
-          notifications={notifications}
-          remove={(id) =>
-            setNotifications((prev) => prev.filter((n) => n.id !== id))
-          }
-        />
+    <UploadQueueProvider onUploadComplete={handleUploadComplete}>
+      <AdminContext.Provider value={contextValue}>
+        <div className="flex h-screen overflow-hidden bg-background text-foreground">
+          <Toast
+            notifications={notifications}
+            remove={(id) =>
+              setNotifications((prev) => prev.filter((n) => n.id !== id))
+            }
+          />
 
         {/* Sidebar */}
         <aside
@@ -467,8 +483,27 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
           }}
           t={t}
         />
-      </div>
-    </AdminContext.Provider>
+
+        <UploadProgressPopupWrapper t={t} token={token} />
+        </div>
+      </AdminContext.Provider>
+    </UploadQueueProvider>
+  )
+}
+
+function UploadProgressPopupWrapper({ t, token }: { t: (key: string) => string; token: string | null }) {
+  const { tasks, isMinimized, setIsMinimized, retryTask, removeTask, clearAll } = useUploadQueue()
+
+  return (
+    <UploadProgressPopup
+      tasks={tasks}
+      isMinimized={isMinimized}
+      onToggleMinimize={() => setIsMinimized(!isMinimized)}
+      onClose={clearAll}
+      onRetry={(taskId) => token && retryTask(taskId, token)}
+      onRemoveTask={removeTask}
+      t={t}
+    />
   )
 }
 

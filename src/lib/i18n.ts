@@ -206,6 +206,13 @@ export const dictionaries = {
       comment_model: '模型名称',
       notify_success: '操作成功',
       save_changes: '保存更改',
+      upload_started: '上传任务已添加到队列',
+      upload_complete: '上传完成',
+      completed: '成功',
+      failed: '失败',
+      pending: '等待中',
+      retry: '重试',
+      retry_all_failed: '重试所有失败项',
     }
   },
   en: {
@@ -413,6 +420,13 @@ export const dictionaries = {
       comment_model: 'Model Name',
       notify_success: 'Operation successful',
       save_changes: 'Save Changes',
+      upload_started: 'Upload tasks added to queue',
+      upload_complete: 'Upload complete',
+      completed: 'completed',
+      failed: 'failed',
+      pending: 'Pending',
+      retry: 'Retry',
+      retry_all_failed: 'Retry all failed',
     }
   }
 }

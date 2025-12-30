@@ -253,6 +253,73 @@ export async function uploadPhoto(input: {
   )
 }
 
+// Upload photo with progress callback using XMLHttpRequest
+export function uploadPhotoWithProgress(input: {
+  token: string
+  file: File
+  title: string
+  category: string | string[]
+  storage_provider?: string
+  storage_path?: string
+  onProgress?: (progress: number) => void
+}): Promise<PhotoDto> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData()
+    form.set('file', input.file)
+    form.set('title', input.title)
+    const categoryValue = Array.isArray(input.category) ? input.category.join(',') : input.category
+    form.set('category', categoryValue)
+    if (input.storage_provider) form.set('storage_provider', input.storage_provider)
+    if (input.storage_path) form.set('storage_path', input.storage_path)
+
+    const xhr = new XMLHttpRequest()
+    const url = buildApiUrl('/api/admin/photos')
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable && input.onProgress) {
+        const progress = Math.round((event.loaded / event.total) * 100)
+        input.onProgress(progress)
+      }
+    })
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status === 401) {
+        reject(new ApiUnauthorizedError('Token invalid or expired'))
+        return
+      }
+
+      try {
+        const response = JSON.parse(xhr.responseText)
+        if (xhr.status >= 200 && xhr.status < 300) {
+          if (response.success === false) {
+            reject(new Error(extractErrorMessage(response) ?? 'Upload failed'))
+          } else if (response.data) {
+            resolve(response.data as PhotoDto)
+          } else {
+            resolve(response as PhotoDto)
+          }
+        } else {
+          reject(new Error(extractErrorMessage(response) ?? `Upload failed (${xhr.status})`))
+        }
+      } catch {
+        reject(new Error('Invalid response from server'))
+      }
+    })
+
+    xhr.addEventListener('error', () => {
+      reject(new Error('Network error during upload'))
+    })
+
+    xhr.addEventListener('abort', () => {
+      reject(new Error('Upload aborted'))
+    })
+
+    xhr.open('POST', url)
+    xhr.setRequestHeader('Authorization', `Bearer ${input.token}`)
+    xhr.send(form)
+  })
+}
+
 export async function deletePhoto(input: {
   token: string
   id: string

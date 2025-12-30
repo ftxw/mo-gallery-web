@@ -15,8 +15,9 @@ import {
   Minimize2,
 } from 'lucide-react'
 import imageCompression from 'browser-image-compression'
-import { AdminSettingsDto, uploadPhoto, getAdminStories, addPhotosToStory, type StoryDto } from '@/lib/api'
+import { AdminSettingsDto, getAdminStories, type StoryDto } from '@/lib/api'
 import { UploadFileItem } from '@/components/admin/UploadFileItem'
+import { useUploadQueue } from '@/contexts/UploadQueueContext'
 
 interface UploadTabProps {
   token: string | null
@@ -34,9 +35,10 @@ export function UploadTab({
   settings,
   t,
   notify,
-  onUploadSuccess,
   onPreview,
 }: UploadTabProps) {
+  const { addTasks } = useUploadQueue()
+
   const [uploadFiles, setUploadFiles] = useState<{ id: string; file: File }[]>([])
   const [uploadViewMode, setUploadViewMode] = useState<'list' | 'grid'>('list')
   const [selectedUploadIds, setSelectedUploadIds] = useState<Set<string>>(new Set())
@@ -52,8 +54,6 @@ export function UploadTab({
   const [stories, setStories] = useState<StoryDto[]>([])
   const [loadingStories, setLoadingStories] = useState(false)
 
-  const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 })
   const [uploadError, setUploadError] = useState('')
 
   const [uploadSource, setUploadSource] = useState('local')
@@ -185,108 +185,24 @@ export function UploadTab({
       setCompressing(false)
     }
 
-    setUploading(true)
-    setUploadProgress({ current: 0, total: filesToUpload.length })
+    // Add tasks to the upload queue
+    addTasks({
+      files: filesToUpload,
+      title: uploadTitle.trim(),
+      categories: uploadCategories,
+      storageProvider: uploadSource || undefined,
+      storagePath: uploadPath.trim() || undefined,
+      storyId: uploadStoryId || undefined,
+      token,
+    })
 
-    try {
-      const uploadedPhotoIds: string[] = []
-      const CONCURRENCY = 4 // Number of parallel uploads
+    // Clear the form
+    setUploadFiles([])
+    setSelectedUploadIds(new Set())
+    setUploadTitle('')
+    setUploadStoryId('')
 
-      // Create upload tasks
-      const uploadTasks = filesToUpload.map((item, index) => ({
-        index,
-        file: item.file,
-        title:
-          filesToUpload.length === 1
-            ? uploadTitle.trim()
-            : item.file.name.replace(/\.[^/.]+$/, ''),
-      }))
-
-      // Process in batches with concurrency limit
-      let completed = 0
-      const results: (string | null)[] = new Array(filesToUpload.length).fill(null)
-
-      const processTask = async (task: typeof uploadTasks[0]) => {
-        try {
-          const photo = await uploadPhoto({
-            token,
-            file: task.file,
-            title: task.title,
-            category: uploadCategories,
-            storage_provider: uploadSource || undefined,
-            storage_path: uploadPath.trim() || undefined,
-          })
-          results[task.index] = photo.id
-          completed++
-          setUploadProgress({ current: completed, total: filesToUpload.length })
-          return photo.id
-        } catch (err) {
-          console.error(`Failed to upload ${task.title}:`, err)
-          completed++
-          setUploadProgress({ current: completed, total: filesToUpload.length })
-          throw err
-        }
-      }
-
-      // Execute with concurrency limit
-      const executing: Promise<string>[] = []
-      for (const task of uploadTasks) {
-        const p = processTask(task)
-        executing.push(p)
-
-        if (executing.length >= CONCURRENCY) {
-          await Promise.race(executing)
-          // Remove completed promises
-          for (let i = executing.length - 1; i >= 0; i--) {
-            const status = await Promise.race([
-              executing[i].then(() => 'fulfilled').catch(() => 'rejected'),
-              Promise.resolve('pending'),
-            ])
-            if (status !== 'pending') {
-              executing.splice(i, 1)
-            }
-          }
-        }
-      }
-
-      // Wait for remaining uploads
-      await Promise.allSettled(executing)
-
-      // Collect successful uploads
-      results.forEach((id) => {
-        if (id) uploadedPhotoIds.push(id)
-      })
-
-      // Associate with story if selected
-      if (uploadStoryId && uploadedPhotoIds.length > 0) {
-        try {
-          await addPhotosToStory(token, uploadStoryId, uploadedPhotoIds)
-        } catch (err) {
-          console.error('Failed to associate photos with story:', err)
-        }
-      }
-
-      const count = uploadedPhotoIds.length
-      const failed = filesToUpload.length - count
-
-      setUploadFiles([])
-      setSelectedUploadIds(new Set())
-      setUploadTitle('')
-      setUploadStoryId('')
-
-      onUploadSuccess()
-      if (failed > 0) {
-        notify(`${count} ${t('admin.notify_upload_success')}, ${failed} failed`, 'info')
-      } else {
-        notify(`${count} ${t('admin.notify_upload_success')}`)
-      }
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : t('common.error'))
-      notify('Upload failed', 'error')
-    } finally {
-      setUploading(false)
-      setUploadProgress({ current: 0, total: 0 })
-    }
+    notify(t('admin.upload_started'), 'info')
   }
 
   const handleRemoveUpload = (id: string) => {
@@ -536,7 +452,7 @@ export function UploadTab({
           <div className="pt-4">
             <button
               onClick={handleUpload}
-              disabled={uploading || compressing || uploadFiles.length === 0}
+              disabled={compressing || uploadFiles.length === 0}
               className="w-full py-4 bg-foreground text-background text-xs font-bold uppercase tracking-[0.2em] hover:bg-primary hover:text-primary-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center space-x-2"
             >
               {compressing ? (
@@ -545,14 +461,6 @@ export function UploadTab({
                   <span>
                     {t('admin.compressing')} ({compressionProgress.current}/
                     {compressionProgress.total})
-                  </span>
-                </>
-              ) : uploading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>
-                    {t('admin.uploading')} ({uploadProgress.current}/
-                    {uploadProgress.total})
                   </span>
                 </>
               ) : (
@@ -596,7 +504,7 @@ export function UploadTab({
                         selectedUploadIds.size === uploadFiles.length
                       }
                       onChange={handleSelectAllUploads}
-                      disabled={uploading || uploadFiles.length === 0}
+                      disabled={uploadFiles.length === 0}
                       className="w-4 h-4 accent-primary cursor-pointer"
                     />
                     <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
@@ -605,7 +513,7 @@ export function UploadTab({
                         : `${uploadFiles.length} ${t('admin.items')}`}
                     </span>
                   </div>
-                  {selectedUploadIds.size > 0 && !uploading && (
+                  {selectedUploadIds.size > 0 && (
                     <button
                       onClick={handleBulkRemoveUploads}
                       className="p-1.5 text-destructive hover:bg-destructive/10 transition-colors rounded"
@@ -638,38 +546,34 @@ export function UploadTab({
                       <LayoutGrid className="w-3.5 h-3.5" />
                     </button>
                   </div>
-                  {!uploading && (
-                    <>
-                      <button
-                        onClick={() => setUploadFiles([])}
-                        className="flex items-center gap-2 text-destructive hover:opacity-80 transition-opacity text-[10px] font-bold uppercase tracking-widest"
-                      >
-                        Clear
-                      </button>
-                      <div className="h-4 w-[1px] bg-border"></div>
-                      <label className="flex items-center gap-2 cursor-pointer hover:text-primary transition-colors text-[10px] font-bold uppercase tracking-widest">
-                        <Plus className="w-3.5 h-3.5" />
-                        {t('admin.add_more')}
-                        <input
-                          type="file"
-                          multiple
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            if (e.target.files) {
-                              const newFiles = Array.from(e.target.files).map(
-                                (f) => ({
-                                  id: crypto.randomUUID(),
-                                  file: f,
-                                })
-                              )
-                              setUploadFiles((prev) => [...prev, ...newFiles])
-                            }
-                          }}
-                        />
-                      </label>
-                    </>
-                  )}
+                  <button
+                    onClick={() => setUploadFiles([])}
+                    className="flex items-center gap-2 text-destructive hover:opacity-80 transition-opacity text-[10px] font-bold uppercase tracking-widest"
+                  >
+                    Clear
+                  </button>
+                  <div className="h-4 w-[1px] bg-border"></div>
+                  <label className="flex items-center gap-2 cursor-pointer hover:text-primary transition-colors text-[10px] font-bold uppercase tracking-widest">
+                    <Plus className="w-3.5 h-3.5" />
+                    {t('admin.add_more')}
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files) {
+                          const newFiles = Array.from(e.target.files).map(
+                            (f) => ({
+                              id: crypto.randomUUID(),
+                              file: f,
+                            })
+                          )
+                          setUploadFiles((prev) => [...prev, ...newFiles])
+                        }
+                      }}
+                    />
+                  </label>
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
@@ -680,15 +584,15 @@ export function UploadTab({
                       : 'flex flex-col'
                   }
                 >
-                  {uploadFiles.map((item, index) => (
+                  {uploadFiles.map((item) => (
                     <UploadFileItem
                       key={item.id}
                       id={item.id}
                       file={item.file}
                       onRemove={handleRemoveUpload}
-                      uploading={uploading}
+                      uploading={false}
                       isUploaded={false}
-                      isCurrent={index === uploadProgress.current - 1}
+                      isCurrent={false}
                       viewMode={uploadViewMode}
                       selected={selectedUploadIds.has(item.id)}
                       onSelect={handleSelectUploadToggle}
@@ -726,29 +630,6 @@ export function UploadTab({
                   }}
                 />
               </label>
-            </div>
-          )}
-          {uploading && (
-            <div className="absolute inset-0 bg-background/50 backdrop-blur-sm flex items-center justify-center z-50">
-              <div className="bg-background border border-border p-8 shadow-2xl flex flex-col items-center max-w-sm w-full mx-4">
-                <Loader2 className="w-12 h-12 text-primary animate-spin mb-6" />
-                <h3 className="font-serif text-xl mb-2">
-                  {t('admin.processing')}
-                </h3>
-                <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">
-                  {uploadProgress.current} / {uploadProgress.total}
-                </p>
-                <div className="w-full h-1 bg-muted mt-6 overflow-hidden">
-                  <div
-                    className="h-full bg-primary transition-all duration-300 ease-out"
-                    style={{
-                      width: `${
-                        (uploadProgress.current / uploadProgress.total) * 100
-                      }%`,
-                    }}
-                  />
-                </div>
-              </div>
             </div>
           )}
         </div>

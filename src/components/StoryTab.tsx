@@ -24,8 +24,15 @@ export function StoryTab({ photoId }: StoryTabProps) {
         const data = await getPhotoStory(photoId)
         setStory(data)
       } catch (err) {
-        console.error('Failed to load story:', err)
-        setError(err instanceof Error ? err.message : 'Failed to load story')
+        // If the error is "No story found", treat it as no story (not an error)
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load story'
+        if (errorMessage.includes('No story found')) {
+          setStory(null)
+          setError(null)
+        } else {
+          console.error('Failed to load story:', err)
+          setError(errorMessage)
+        }
       } finally {
         setLoading(false)
       }

@@ -318,16 +318,15 @@ export function TimelineView({ photos, settings, grayscale, onPhotoClick }: Time
 
       <AnimatePresence mode="popLayout">
         {groupedByDay.map((dayGroup, dayIndex) => (
-          <div
+          <motion.div
             key={dayGroup.dateKey}
             ref={(el) => setDayRef(dayGroup.dateKey, el)}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.4, delay: Math.min(dayIndex * 0.05, 0.5) }}
+            className="relative"
           >
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: Math.min(dayIndex * 0.05, 0.5) }}
-              className="relative"
-            >
             {/* Sticky Date Header */}
             <div className="sticky top-[116px] z-20 -ml-1 md:-ml-0">
               <div className="relative py-3 bg-background/95 backdrop-blur-sm">
@@ -424,7 +423,6 @@ export function TimelineView({ photos, settings, grayscale, onPhotoClick }: Time
               </div>
             </div>
           </motion.div>
-          </div>
         ))}
       </AnimatePresence>
 

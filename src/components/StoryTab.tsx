@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { BookOpen, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
+import { BookOpen, MessageSquare, ChevronLeft, ChevronRight, CornerDownRight, Send } from 'lucide-react'
 import { getPhotoStory, type StoryDto, getPhotoComments, getStoryComments, submitPhotoComment, type PublicCommentDto, type PhotoDto, resolveAssetUrl } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useSettings } from '@/contexts/SettingsContext'
@@ -47,14 +47,12 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
   }, [story?.photos])
 
   useEffect(() => {
-    // If photo is within current story, just update index - no loading state change
     if (isPhotoInCurrentStory(photoId)) {
       const index = story!.photos.findIndex(p => p.id === currentPhoto.id)
       setCurrentPhotoIndex(index >= 0 ? index : 0)
       return
     }
 
-    // Prevent duplicate fetches for the same photoId
     if (fetchedForPhotoId.current === photoId || isFetching.current) {
       return
     }
@@ -63,7 +61,6 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
     fetchedForPhotoId.current = photoId
 
     async function fetchData() {
-      // Only show loading skeleton on initial load, not when switching photos
       if (isInitialLoad.current) {
         setLoading(true)
         setCommentsLoading(true)
@@ -76,13 +73,11 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
         setStory(data)
         currentStoryId.current = data?.id ?? null
 
-        // Find current photo index in story photos
         if (data?.photos) {
           const index = data.photos.findIndex(p => p.id === currentPhoto.id)
           setCurrentPhotoIndex(index >= 0 ? index : 0)
         }
 
-        // Fetch story comments
         if (data?.id) {
           const allComments = await getStoryComments(data.id)
           allComments.sort((a, b) =>
@@ -95,7 +90,6 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
         if (errorMessage.includes('No story found')) {
           setStory(null)
           setError(null)
-          // Fetch photo comments when no story
           try {
             const photoComments = await getPhotoComments(photoId)
             setComments(photoComments)
@@ -117,7 +111,6 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
     fetchData()
   }, [photoId, currentPhoto.id, isPhotoInCurrentStory])
 
-  // Update current photo index when navigating within story
   useEffect(() => {
     if (story?.photos) {
       const index = story.photos.findIndex(p => p.id === currentPhoto.id)
@@ -127,7 +120,6 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
     }
   }, [currentPhoto.id, story?.photos])
 
-  // Keyboard navigation
   useEffect(() => {
     if (!story?.photos || story.photos.length <= 1 || !onPhotoChange) return
 
@@ -145,19 +137,6 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [story?.photos, currentPhotoIndex, onPhotoChange])
 
-  async function fetchComments() {
-    try {
-      setCommentsLoading(true)
-      const data = await getPhotoComments(photoId)
-      setComments(data)
-    } catch (err) {
-      console.error('Failed to load comments:', err)
-    } finally {
-      setCommentsLoading(false)
-    }
-  }
-
-  // Refresh comments after submitting
   async function refreshComments() {
     try {
       setCommentsLoading(true)
@@ -180,40 +159,24 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-
-    if (!formData.author.trim() || !formData.content.trim()) {
-      return
-    }
+    if (!formData.author.trim() || !formData.content.trim()) return
 
     try {
       setSubmitting(true)
       setSubmitMessage(null)
-
       const result = await submitPhotoComment(photoId, {
         author: formData.author.trim(),
         email: formData.email.trim() || undefined,
         content: formData.content.trim(),
       })
 
-      // Check if comment was approved or pending
       if (result.status === 'approved') {
-        setSubmitMessage({
-          type: 'success',
-          text: t('gallery.comment_success'),
-        })
-        // Refresh comments
+        setSubmitMessage({ type: 'success', text: t('gallery.comment_success') })
         await refreshComments()
       } else {
-        setSubmitMessage({
-          type: 'pending',
-          text: t('gallery.comment_pending'),
-        })
+        setSubmitMessage({ type: 'pending', text: t('gallery.comment_pending') })
       }
-
-      // Clear form
       setFormData({ author: '', email: '', content: '' })
-
-      // Clear message after 5 seconds
       setTimeout(() => setSubmitMessage(null), 5000)
     } catch (err) {
       console.error('Failed to submit comment:', err)
@@ -228,165 +191,14 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
 
   if (loading) {
     return (
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8">
-        <div className="space-y-4 animate-pulse">
-          <div className="h-6 bg-muted rounded w-3/4"></div>
-          <div className="h-4 bg-muted rounded w-1/4"></div>
-          <div className="space-y-2 mt-6">
-            <div className="h-4 bg-muted rounded"></div>
-            <div className="h-4 bg-muted rounded"></div>
-            <div className="h-4 bg-muted rounded w-5/6"></div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8">
-        <div className="text-center text-destructive py-12">
-          <p className="text-sm">{error}</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!story) {
-    return (
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8">
-        <div className="text-center text-muted-foreground py-12">
-          <BookOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p className="text-sm">{t('gallery.no_story')}</p>
-        </div>
-
-        {/* Comments Section - Always show even without story */}
-        <div className="mt-8 border-t border-border pt-6">
-          <div className="flex items-center gap-2 mb-6">
-            <MessageSquare className="w-5 h-5 text-muted-foreground" />
-            <h3 className="text-[10px] font-bold tracking-[0.2em] uppercase text-muted-foreground">
-              {t('gallery.comments')} {comments.length > 0 && `(${comments.length})`}
-            </h3>
-          </div>
-
-          {/* Comments List */}
-          {commentsLoading ? (
-            <div className="space-y-4 animate-pulse mb-6">
-              {[...Array(2)].map((_, i) => (
-                <div key={i} className="space-y-2">
-                  <div className="h-4 bg-muted rounded w-1/4"></div>
-                  <div className="h-3 bg-muted rounded"></div>
-                  <div className="h-3 bg-muted rounded w-5/6"></div>
-                </div>
-              ))}
-            </div>
-          ) : comments.length === 0 ? (
-            <div className="text-center text-muted-foreground py-8 mb-6">
-              <MessageSquare className="w-10 h-10 mx-auto mb-3 opacity-50" />
-              <p className="text-sm">{t('gallery.no_comments')}</p>
-            </div>
-          ) : (
-            <div className="space-y-4 mb-6">
-              {comments.map((comment) => (
-                <div
-                  key={comment.id}
-                  className="pb-4 border-b border-border last:border-b-0"
-                >
-                  <div className="flex items-baseline gap-2 mb-2">
-                    <span className="text-sm font-bold text-foreground">
-                      {comment.author}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest">
-                      {new Date(comment.createdAt).toLocaleString(locale, {
-                        year: 'numeric',
-                        month: '2-digit',
-                        day: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                  </div>
-                  <p className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
-                    {comment.content}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Comment Form */}
-          <div className="border-t border-border pt-6">
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">
-                    {t('gallery.comment_author')}
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.author}
-                    onChange={(e) =>
-                      setFormData({ ...formData, author: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-transparent border-b border-border focus:border-primary outline-none transition-colors text-sm text-foreground"
-                    required
-                    disabled={submitting}
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">
-                    {t('gallery.comment_email')}
-                  </label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) =>
-                      setFormData({ ...formData, email: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-transparent border-b border-border focus:border-primary outline-none transition-colors text-sm text-foreground"
-                    disabled={submitting}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">
-                  {t('gallery.comment_content')}
-                </label>
-                <textarea
-                  value={formData.content}
-                  onChange={(e) =>
-                    setFormData({ ...formData, content: e.target.value })
-                  }
-                  className="w-full px-3 py-2 bg-transparent border border-border focus:border-primary outline-none transition-colors text-sm text-foreground resize-none"
-                  rows={4}
-                  required
-                  disabled={submitting}
-                />
-              </div>
-
-              {submitMessage && (
-                <div
-                  className={`text-xs p-3 border ${
-                    submitMessage.type === 'success'
-                      ? 'bg-primary/10 border-primary/20 text-primary'
-                      : submitMessage.type === 'pending'
-                      ? 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400'
-                      : 'bg-destructive/10 border-destructive/20 text-destructive'
-                  }`}
-                >
-                  {submitMessage.text}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={submitting || !formData.author.trim() || !formData.content.trim()}
-                className="w-full py-3 bg-primary text-primary-foreground text-xs font-bold uppercase tracking-[0.2em] hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed rounded-sm"
-              >
-                {submitting ? t('gallery.comment_submitting') : t('gallery.comment_submit')}
-              </button>
-            </form>
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+        <div className="space-y-6 animate-pulse">
+          <div className="h-10 bg-muted rounded-none w-3/4"></div>
+          <div className="h-4 bg-muted rounded-none w-1/4"></div>
+          <div className="space-y-3 mt-12">
+            <div className="h-4 bg-muted rounded-none"></div>
+            <div className="h-4 bg-muted rounded-none"></div>
+            <div className="h-4 bg-muted rounded-none w-5/6"></div>
           </div>
         </div>
       </div>
@@ -394,196 +206,156 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
   }
 
   return (
-    <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8 space-y-6">
-      {/* Story Header */}
-      <div className="space-y-3">
-        <h3 className="font-serif text-2xl leading-tight text-foreground">
-          {story.title}
-        </h3>
-        <div className="text-[10px] text-muted-foreground uppercase tracking-widest">
-          {new Date(story.createdAt).toLocaleString(locale, {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
+    <div className="flex-1 overflow-y-auto custom-scrollbar p-8 md:p-12 space-y-16">
+      {!story ? (
+        <div className="space-y-12">
+          <div className="text-center py-12 border border-dashed border-border/50">
+            <BookOpen className="w-10 h-10 mx-auto mb-4 opacity-10" />
+            <p className="text-xs font-serif italic text-muted-foreground">{t('gallery.no_story')}</p>
+          </div>
         </div>
-      </div>
-
-      {/* Photo Gallery Navigation - Show if multiple photos */}
-      {story.photos && story.photos.length > 1 && onPhotoChange && (
-        <div className="border-t border-b border-border py-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <h4 className="text-[10px] font-bold tracking-[0.2em] uppercase text-muted-foreground">
-                {locale === 'zh' ? '叙事相册' : 'Story Album'}
-              </h4>
-              <span className="text-xs text-muted-foreground">
-                {currentPhotoIndex + 1} / {story.photos.length}
-              </span>
+      ) : (
+        <div className="space-y-12">
+          {/* Story Header */}
+          <div className="space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="h-px w-8 bg-primary/30" />
+              <span className="text-[10px] font-bold uppercase tracking-[0.4em] text-primary/60">Journal</span>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => currentPhotoIndex > 0 && onPhotoChange(story.photos[currentPhotoIndex - 1])}
-                disabled={currentPhotoIndex === 0}
-                className="p-2 rounded-md border border-border hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                title={locale === 'zh' ? '上一张' : 'Previous'}
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => currentPhotoIndex < story.photos.length - 1 && onPhotoChange(story.photos[currentPhotoIndex + 1])}
-                disabled={currentPhotoIndex === story.photos.length - 1}
-                className="p-2 rounded-md border border-border hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                title={locale === 'zh' ? '下一张' : 'Next'}
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
+            <h3 className="font-serif text-3xl md:text-4xl leading-[1.1] text-foreground tracking-tight">
+              {story.title}
+            </h3>
+            <div className="flex items-center gap-4 text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60">
+              {new Date(story.createdAt).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })}
             </div>
           </div>
 
-          {/* Thumbnail Strip */}
-          <div className="relative">
-            <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
-              {story.photos.map((photo, index) => (
-                <button
-                  key={photo.id}
-                  onClick={() => onPhotoChange(photo)}
-                  className={`relative flex-shrink-0 w-24 h-24 rounded-md overflow-hidden border-2 transition-all ${
-                    index === currentPhotoIndex
-                      ? 'border-primary ring-2 ring-primary/20 scale-105'
-                      : 'border-border hover:border-primary/50'
-                  }`}
-                  title={photo.title}
-                >
-                  <img
-                    src={resolveAssetUrl(photo.thumbnailUrl || photo.url, settings?.cdn_domain)}
-                    alt={photo.title}
-                    className="w-full h-full object-cover"
-                  />
-                  {index === currentPhotoIndex && (
-                    <div className="absolute inset-0 bg-primary/10 flex items-center justify-center">
-                      <div className="w-2 h-2 rounded-full bg-primary"></div>
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* Photo Navigation */}
+          {story.photos && story.photos.length > 1 && onPhotoChange && (
+            <div className="py-8 border-t border-b border-border/50">
+              <div className="flex items-center justify-between mb-6">
+                <div className="space-y-1">
+                  <h4 className="text-[10px] font-bold tracking-[0.3em] uppercase text-primary">
+                    {locale === 'zh' ? '叙事相册' : 'STORY ALBUM'}
+                  </h4>
+                  <div className="text-[10px] font-mono text-muted-foreground/60 uppercase">
+                    Record {currentPhotoIndex + 1} of {story.photos.length}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => currentPhotoIndex > 0 && onPhotoChange(story.photos[currentPhotoIndex - 1])}
+                    disabled={currentPhotoIndex === 0}
+                    className="w-10 h-10 flex items-center justify-center border border-border hover:border-primary hover:text-primary transition-all disabled:opacity-20 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => currentPhotoIndex < story.photos.length - 1 && onPhotoChange(story.photos[currentPhotoIndex + 1])}
+                    disabled={currentPhotoIndex === story.photos.length - 1}
+                    className="w-10 h-10 flex items-center justify-center border border-border hover:border-primary hover:text-primary transition-all disabled:opacity-20 disabled:cursor-not-allowed"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
 
-          {/* Keyboard hint */}
-          <p className="text-[10px] text-muted-foreground mt-3 text-center">
-            {locale === 'zh' ? '使用 ← → 键切换照片' : 'Use ← → keys to navigate'}
-          </p>
+              <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x">
+                {story.photos.map((photo, index) => (
+                  <button
+                    key={photo.id}
+                    onClick={() => onPhotoChange(photo)}
+                    className={`relative flex-shrink-0 w-20 h-20 overflow-hidden transition-all snap-start ${
+                      index === currentPhotoIndex
+                        ? 'grayscale-0 scale-105'
+                        : 'grayscale hover:grayscale-0 hover:scale-105'
+                    }`}
+                  >
+                    <img
+                      src={resolveAssetUrl(photo.thumbnailUrl || photo.url, settings?.cdn_domain)}
+                      alt={photo.title}
+                      className="w-full h-full object-cover"
+                    />
+                    {index === currentPhotoIndex && (
+                      <div className="absolute inset-0 border-2 border-primary" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Story Content */}
+          <div className="prose prose-stone dark:prose-invert max-w-none prose-p:font-serif prose-p:text-base prose-p:leading-relaxed prose-p:text-foreground/80">
+            <ReactMarkdown
+              components={{
+                h1: ({ children }) => <h1 className="font-serif text-2xl mb-6 tracking-tight">{children}</h1>,
+                h2: ({ children }) => <h2 className="font-serif text-xl mb-4 tracking-tight">{children}</h2>,
+                blockquote: ({ children }) => (
+                  <blockquote className="border-l-2 border-primary/30 pl-6 italic font-serif text-muted-foreground my-8">
+                    {children}
+                  </blockquote>
+                ),
+                p: ({ children }) => <p className="mb-6">{children}</p>,
+                a: ({ href, children }) => (
+                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline underline-offset-4">
+                    {children}
+                  </a>
+                ),
+              }}
+            >
+              {story.content}
+            </ReactMarkdown>
+          </div>
         </div>
       )}
 
-      {/* Story Content */}
-      <div className="prose prose-sm max-w-none dark:prose-invert">
-        <ReactMarkdown
-          components={{
-            h1: ({ children }) => (
-              <h1 className="font-serif text-xl mb-4 text-foreground">{children}</h1>
-            ),
-            h2: ({ children }) => (
-              <h2 className="font-serif text-lg mb-3 text-foreground">{children}</h2>
-            ),
-            h3: ({ children }) => (
-              <h3 className="font-serif text-base mb-2 text-foreground">{children}</h3>
-            ),
-            p: ({ children }) => (
-              <p className="text-sm leading-relaxed mb-4 text-foreground">{children}</p>
-            ),
-            ul: ({ children }) => (
-              <ul className="list-disc list-inside mb-4 text-sm text-foreground">{children}</ul>
-            ),
-            ol: ({ children }) => (
-              <ol className="list-decimal list-inside mb-4 text-sm text-foreground">{children}</ol>
-            ),
-            li: ({ children }) => (
-              <li className="mb-1 text-foreground">{children}</li>
-            ),
-            blockquote: ({ children }) => (
-              <blockquote className="border-l-4 border-primary pl-4 italic my-4 text-muted-foreground">
-                {children}
-              </blockquote>
-            ),
-            code: ({ children }) => (
-              <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">
-                {children}
-              </code>
-            ),
-            pre: ({ children }) => (
-              <pre className="bg-muted p-4 rounded overflow-x-auto mb-4">
-                {children}
-              </pre>
-            ),
-            a: ({ href, children }) => (
-              <a
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline"
-              >
-                {children}
-              </a>
-            ),
-          }}
-        >
-          {story.content}
-        </ReactMarkdown>
-      </div>
-
-      {/* Related Photos Count - Remove this section as we now have the gallery above */}
-
-      {/* Comments Section - Below Story */}
-      <div className="border-t border-border pt-6">
-        <div className="flex items-center gap-2 mb-6">
-          <MessageSquare className="w-5 h-5 text-muted-foreground" />
-          <h3 className="text-[10px] font-bold tracking-[0.2em] uppercase text-muted-foreground">
-            {t('gallery.comments')} {comments.length > 0 && `(${comments.length})`}
-          </h3>
+      {/* Comments Section */}
+      <div className="pt-16 border-t border-border/50">
+        <div className="flex items-center justify-between mb-12">
+          <div className="flex items-center gap-4">
+            <MessageSquare className="w-5 h-5 text-primary/40" />
+            <h3 className="text-[10px] font-bold tracking-[0.4em] uppercase text-primary/80">
+              {t('gallery.comments')} {comments.length > 0 && `(${comments.length})`}
+            </h3>
+          </div>
         </div>
 
         {/* Comments List */}
         {commentsLoading ? (
-          <div className="space-y-4 animate-pulse mb-6">
+          <div className="space-y-8 animate-pulse mb-12">
             {[...Array(2)].map((_, i) => (
-              <div key={i} className="space-y-2">
-                <div className="h-4 bg-muted rounded w-1/4"></div>
-                <div className="h-3 bg-muted rounded"></div>
-                <div className="h-3 bg-muted rounded w-5/6"></div>
+              <div key={i} className="space-y-3">
+                <div className="h-4 bg-muted rounded-none w-1/4"></div>
+                <div className="h-4 bg-muted rounded-none w-full"></div>
               </div>
             ))}
           </div>
         ) : comments.length === 0 ? (
-          <div className="text-center text-muted-foreground py-8 mb-6">
-            <MessageSquare className="w-10 h-10 mx-auto mb-3 opacity-50" />
-            <p className="text-sm">{t('gallery.no_comments')}</p>
+          <div className="text-center py-12 mb-12 bg-muted/5 border border-border/50">
+            <p className="text-xs font-serif italic text-muted-foreground/60">{t('gallery.no_comments')}</p>
           </div>
         ) : (
-          <div className="space-y-4 mb-6">
+          <div className="space-y-12 mb-16">
             {comments.map((comment) => (
-              <div
-                key={comment.id}
-                className="pb-4 border-b border-border last:border-b-0"
-              >
-                <div className="flex items-baseline gap-2 mb-2">
-                  <span className="text-sm font-bold text-foreground">
+              <div key={comment.id} className="relative pl-8">
+                <div className="absolute left-0 top-0 text-primary/20">
+                  <CornerDownRight className="w-4 h-4" />
+                </div>
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="text-xs font-bold text-foreground tracking-tight">
                     {comment.author}
                   </span>
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-widest">
-                    {new Date(comment.createdAt).toLocaleString(locale, {
-                      year: 'numeric',
-                      month: '2-digit',
-                      day: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                  <div className="w-1 h-1 rounded-full bg-border" />
+                  <span className="text-[9px] font-mono text-muted-foreground/60 uppercase tracking-widest">
+                    {new Date(comment.createdAt).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en-US')}
                   </span>
                 </div>
-                <p className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
+                <p className="text-sm font-serif leading-relaxed text-foreground/70">
                   {comment.content}
                 </p>
               </div>
@@ -592,66 +364,57 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
         )}
 
         {/* Comment Form */}
-        <div className="border-t border-border pt-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">
+        <div className="relative group">
+          <div className="absolute -inset-4 bg-muted/5 opacity-0 group-focus-within:opacity-100 transition-opacity pointer-events-none" />
+          <form onSubmit={handleSubmit} className="relative space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-2">
+                <label className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-[0.3em]">
                   {t('gallery.comment_author')}
                 </label>
                 <input
                   type="text"
                   value={formData.author}
-                  onChange={(e) =>
-                    setFormData({ ...formData, author: e.target.value })
-                  }
-                  className="w-full px-3 py-2 bg-transparent border-b border-border focus:border-primary outline-none transition-colors text-sm text-foreground"
+                  onChange={(e) => setFormData({ ...formData, author: e.target.value })}
+                  className="w-full py-3 bg-transparent border-b border-border focus:border-primary outline-none transition-all text-sm font-serif"
                   required
                   disabled={submitting}
                 />
               </div>
-              <div>
-                <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">
+              <div className="space-y-2">
+                <label className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-[0.3em]">
                   {t('gallery.comment_email')}
                 </label>
                 <input
                   type="email"
                   value={formData.email}
-                  onChange={(e) =>
-                    setFormData({ ...formData, email: e.target.value })
-                  }
-                  className="w-full px-3 py-2 bg-transparent border-b border-border focus:border-primary outline-none transition-colors text-sm text-foreground"
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full py-3 bg-transparent border-b border-border focus:border-primary outline-none transition-all text-sm font-serif placeholder:italic placeholder:text-muted-foreground/30"
+                  placeholder="Optional"
                   disabled={submitting}
                 />
               </div>
             </div>
 
-            <div>
-              <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">
+            <div className="space-y-2">
+              <label className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-[0.3em]">
                 {t('gallery.comment_content')}
               </label>
               <textarea
                 value={formData.content}
-                onChange={(e) =>
-                  setFormData({ ...formData, content: e.target.value })
-                }
-                className="w-full px-3 py-2 bg-transparent border border-border focus:border-primary outline-none transition-colors text-sm text-foreground resize-none"
-                rows={4}
+                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                className="w-full py-4 bg-transparent border border-border focus:border-primary p-4 outline-none transition-all text-sm font-serif min-h-[120px] resize-none"
                 required
                 disabled={submitting}
               />
             </div>
 
             {submitMessage && (
-              <div
-                className={`text-xs p-3 border ${
-                  submitMessage.type === 'success'
-                    ? 'bg-primary/10 border-primary/20 text-primary'
-                    : submitMessage.type === 'pending'
-                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400'
-                    : 'bg-destructive/10 border-destructive/20 text-destructive'
-                }`}
-              >
+              <div className={`text-[10px] p-4 font-mono uppercase tracking-widest border ${
+                submitMessage.type === 'success' ? 'bg-primary/5 border-primary/20 text-primary' :
+                submitMessage.type === 'pending' ? 'bg-amber-500/5 border-amber-500/20 text-amber-600' :
+                'bg-destructive/5 border-destructive/20 text-destructive'
+              }`}>
                 {submitMessage.text}
               </div>
             )}
@@ -659,9 +422,12 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
             <button
               type="submit"
               disabled={submitting || !formData.author.trim() || !formData.content.trim()}
-              className="w-full py-3 bg-primary text-primary-foreground text-xs font-bold uppercase tracking-[0.2em] hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed rounded-sm"
+              className="group/btn flex items-center gap-4 text-[10px] font-bold uppercase tracking-[0.4em] text-primary disabled:opacity-20"
             >
-              {submitting ? t('gallery.comment_submitting') : t('gallery.comment_submit')}
+              <span>{submitting ? t('gallery.comment_submitting') : t('gallery.comment_submit')}</span>
+              <div className="w-8 h-8 flex items-center justify-center border border-primary/20 rounded-full group-hover/btn:bg-primary group-hover/btn:text-primary-foreground transition-all">
+                <Send className="w-3 h-3" />
+              </div>
             </button>
           </form>
         </div>

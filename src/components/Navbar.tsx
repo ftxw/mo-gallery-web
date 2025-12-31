@@ -115,7 +115,7 @@ export default function Navbar() {
                 {[
                   { name: t('nav.home'), path: '/' },
                   { name: t('nav.gallery'), path: '/gallery' },
-                  { name: t('nav.blog'), path: '/blog' },
+                  { name: t('nav.story'), path: '/story' },
                   { name: t('nav.about'), path: '/about' },
                 ].map((item) => (
                   <Link
@@ -206,7 +206,7 @@ export default function Navbar() {
                 {[
                   { name: t('nav.home'), path: '/' },
                   { name: t('nav.gallery'), path: '/gallery' },
-                  { name: t('nav.blog'), path: '/blog' },
+                  { name: t('nav.story'), path: '/story' },
                   { name: t('nav.about'), path: '/about' },
                 ].map((item, index) => (
                   <motion.div

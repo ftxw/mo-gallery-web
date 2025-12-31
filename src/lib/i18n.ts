@@ -20,7 +20,7 @@ export const dictionaries = {
     nav: {
       home: '首页',
       gallery: '画廊',
-      blog: '博客',
+      story: '叙事',
       about: '关于',
       admin: '管理',
       login: '登录',
@@ -113,6 +113,15 @@ export const dictionaries = {
       weekday_thu: '周四',
       weekday_fri: '周五',
       weekday_sat: '周六',
+    },
+    story: {
+      count_suffix: '篇叙事',
+      empty: '暂无叙事',
+      read_more: '阅读全文',
+      back_to_gallery: '返回画廊',
+      back_to_list: '返回叙事列表',
+      photos_suffix: '张照片',
+      related_photos: '相关照片',
     },
     about: {
       title: 'MO',
@@ -312,7 +321,7 @@ export const dictionaries = {
     nav: {
       home: 'HOME',
       gallery: 'GALLERY',
-      blog: 'BLOG',
+      story: 'STORY',
       about: 'ABOUT',
       admin: 'ADMIN',
       login: 'LOGIN',
@@ -405,6 +414,15 @@ export const dictionaries = {
       weekday_thu: 'THU',
       weekday_fri: 'FRI',
       weekday_sat: 'SAT',
+    },
+    story: {
+      count_suffix: 'Narratives',
+      empty: 'No stories yet',
+      read_more: 'Read More',
+      back_to_gallery: 'Back to Gallery',
+      back_to_list: 'Back to Stories',
+      photos_suffix: 'photos',
+      related_photos: 'Related Photos',
     },
     about: {
       title: 'MO',

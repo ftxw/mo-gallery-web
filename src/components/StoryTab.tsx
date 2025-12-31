@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { BookOpen, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getPhotoStory, type StoryDto, getPhotoComments, getStoryComments, submitPhotoComment, type PublicCommentDto, type PhotoDto, resolveAssetUrl } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -25,7 +25,6 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
   const [comments, setComments] = useState<PublicCommentDto[]>([])
   const [commentsLoading, setCommentsLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [loadedStoryId, setLoadedStoryId] = useState<string | null>(null) // Track which story's comments are loaded
   const [formData, setFormData] = useState({
     author: '',
     email: '',
@@ -36,75 +35,89 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
     text: string
   } | null>(null)
 
+  // Use refs to track fetch state and prevent duplicate requests
+  const fetchedForPhotoId = useRef<string | null>(null)
+  const currentStoryId = useRef<string | null>(null)
+  const isFetching = useRef(false)
+  const isInitialLoad = useRef(true)
+
+  // Check if photo is within current story
+  const isPhotoInCurrentStory = useCallback((pid: string) => {
+    return story?.photos?.some(p => p.id === pid) ?? false
+  }, [story?.photos])
+
   useEffect(() => {
-    async function fetchStory() {
-      try {
+    // If photo is within current story, just update index - no loading state change
+    if (isPhotoInCurrentStory(photoId)) {
+      const index = story!.photos.findIndex(p => p.id === currentPhoto.id)
+      setCurrentPhotoIndex(index >= 0 ? index : 0)
+      return
+    }
+
+    // Prevent duplicate fetches for the same photoId
+    if (fetchedForPhotoId.current === photoId || isFetching.current) {
+      return
+    }
+
+    isFetching.current = true
+    fetchedForPhotoId.current = photoId
+
+    async function fetchData() {
+      // Only show loading skeleton on initial load, not when switching photos
+      if (isInitialLoad.current) {
         setLoading(true)
-        setError(null)
+        setCommentsLoading(true)
+      }
+      setError(null)
+      currentStoryId.current = null
+
+      try {
         const data = await getPhotoStory(photoId)
         setStory(data)
+        currentStoryId.current = data?.id ?? null
+
         // Find current photo index in story photos
-        if (data && data.photos) {
+        if (data?.photos) {
           const index = data.photos.findIndex(p => p.id === currentPhoto.id)
           setCurrentPhotoIndex(index >= 0 ? index : 0)
         }
+
+        // Fetch story comments
+        if (data?.id) {
+          const allComments = await getStoryComments(data.id)
+          allComments.sort((a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          )
+          setComments(allComments)
+        }
       } catch (err) {
-        // If the error is "No story found", treat it as no story (not an error)
         const errorMessage = err instanceof Error ? err.message : 'Failed to load story'
         if (errorMessage.includes('No story found')) {
           setStory(null)
           setError(null)
+          // Fetch photo comments when no story
+          try {
+            const photoComments = await getPhotoComments(photoId)
+            setComments(photoComments)
+          } catch (commentErr) {
+            console.error('Failed to load comments:', commentErr)
+          }
         } else {
           console.error('Failed to load story:', err)
           setError(errorMessage)
         }
       } finally {
         setLoading(false)
+        setCommentsLoading(false)
+        isFetching.current = false
+        isInitialLoad.current = false
       }
     }
 
-    fetchStory()
-  }, [photoId, currentPhoto.id])
+    fetchData()
+  }, [photoId, currentPhoto.id, isPhotoInCurrentStory])
 
-  // Fetch comments only when story changes or when there's no story
-  useEffect(() => {
-    async function loadComments() {
-      // If there's a story, load all comments for the story (only once per story)
-      if (story && story.id !== loadedStoryId) {
-        await fetchStoryComments(story)
-      }
-      // If there's no story, load comments for the current photo only
-      else if (!story && !loading) {
-        await fetchComments()
-      }
-    }
-
-    loadComments()
-  }, [story, loading])
-
-  // Fetch all comments for the story using the new API endpoint
-  async function fetchStoryComments(storyData: StoryDto) {
-    try {
-      setCommentsLoading(true)
-
-      // Use the new story comments endpoint - single API call
-      const allComments = await getStoryComments(storyData.id)
-
-      // Sort by creation date (newest first)
-      allComments.sort((a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      )
-
-      setComments(allComments)
-      setLoadedStoryId(storyData.id)
-    } catch (err) {
-      console.error('Failed to load story comments:', err)
-    } finally {
-      setCommentsLoading(false)
-    }
-  }
-
-  // Update current photo index when currentPhoto changes
+  // Update current photo index when navigating within story
   useEffect(() => {
     if (story?.photos) {
       const index = story.photos.findIndex(p => p.id === currentPhoto.id)
@@ -144,6 +157,27 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
     }
   }
 
+  // Refresh comments after submitting
+  async function refreshComments() {
+    try {
+      setCommentsLoading(true)
+      if (story?.id) {
+        const allComments = await getStoryComments(story.id)
+        allComments.sort((a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )
+        setComments(allComments)
+      } else {
+        const data = await getPhotoComments(photoId)
+        setComments(data)
+      }
+    } catch (err) {
+      console.error('Failed to refresh comments:', err)
+    } finally {
+      setCommentsLoading(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
@@ -167,12 +201,8 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
           type: 'success',
           text: t('gallery.comment_success'),
         })
-        // Refresh comments - if story exists, reload all story comments, otherwise just current photo
-        if (story) {
-          await fetchStoryComments(story)
-        } else {
-          await fetchComments()
-        }
+        // Refresh comments
+        await refreshComments()
       } else {
         setSubmitMessage({
           type: 'pending',

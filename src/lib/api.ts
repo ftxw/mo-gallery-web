@@ -207,7 +207,19 @@ export interface LoginRequest {
   password: string
 }
 
-export async function login(data: LoginRequest): Promise<string> {
+export interface LoginResponse {
+  token: string
+  user: {
+    id?: string
+    username: string
+    avatarUrl?: string
+    isAdmin?: boolean
+    oauthProvider?: string
+    trustLevel?: number
+  }
+}
+
+export async function login(data: LoginRequest): Promise<LoginResponse> {
   const envelope = await apiRequest('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify(data),
@@ -215,7 +227,34 @@ export async function login(data: LoginRequest): Promise<string> {
   if (!('token' in envelope) || typeof envelope.token !== 'string') {
     throw new Error('Unexpected login response (missing token)')
   }
-  return envelope.token
+  const user = 'user' in envelope && envelope.user ? envelope.user as LoginResponse['user'] : { username: data.username }
+  return { token: envelope.token, user }
+}
+
+// Linux DO OAuth APIs
+export async function getLinuxDoAuthUrl(): Promise<{ url: string; state: string }> {
+  return apiRequestData<{ url: string; state: string }>('/api/auth/linuxdo')
+}
+
+export async function loginWithLinuxDo(code: string): Promise<LoginResponse> {
+  const envelope = await apiRequest('/api/auth/linuxdo/callback', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  })
+  if (!('token' in envelope) || typeof envelope.token !== 'string') {
+    throw new Error('Unexpected OAuth response (missing token)')
+  }
+  const user = 'user' in envelope && envelope.user ? envelope.user as LoginResponse['user'] : { username: 'user' }
+  return { token: envelope.token, user }
+}
+
+export async function isLinuxDoEnabled(): Promise<boolean> {
+  try {
+    const result = await apiRequestData<{ enabled: boolean }>('/api/auth/linuxdo/enabled')
+    return result.enabled
+  } catch {
+    return false
+  }
 }
 
 export async function getCategories(): Promise<string[]> {
@@ -550,6 +589,14 @@ export async function removePhotoFromStory(
 
 // --- Public Comment APIs ---
 
+export interface CommentSettings {
+  linuxdoOnly: boolean
+}
+
+export async function getCommentSettings(): Promise<CommentSettings> {
+  return apiRequestData<CommentSettings>('/api/comments/settings')
+}
+
 export async function getPhotoComments(photoId: string): Promise<PublicCommentDto[]> {
   return apiRequestData<PublicCommentDto[]>(`/api/photos/${encodeURIComponent(photoId)}/comments`)
 }
@@ -561,19 +608,21 @@ export async function getStoryComments(storyId: string): Promise<PublicCommentDt
 
 export async function submitPhotoComment(
   photoId: string,
-  data: { author: string; email?: string; content: string }
+  data: { author: string; email?: string; content: string },
+  token?: string | null
 ): Promise<{ id: string; author: string; content: string; createdAt: string; status: string }> {
   const response = await apiRequest(
     `/api/photos/${encodeURIComponent(photoId)}/comments`,
     {
       method: 'POST',
       body: JSON.stringify(data),
-    }
+    },
+    token
   )
   if (!('data' in response)) {
     throw new Error('Unexpected API response')
   }
-  return response.data as any
+  return response.data as { id: string; author: string; content: string; createdAt: string; status: string }
 }
 
 // --- Blog APIs ---

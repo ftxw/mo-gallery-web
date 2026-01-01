@@ -6,6 +6,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'secretKey'
 export interface JwtPayload {
   sub: string
   username: string
+  isAdmin?: boolean
+  oauthProvider?: string
+  avatarUrl?: string
 }
 
 export function signToken(payload: JwtPayload): string {

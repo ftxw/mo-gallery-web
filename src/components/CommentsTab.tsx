@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { MessageSquare } from 'lucide-react'
-import { getPhotoComments, submitPhotoComment, type PublicCommentDto } from '@/lib/api'
+import { useRouter } from 'next/navigation'
+import { MessageSquare, LogIn } from 'lucide-react'
+import { getPhotoComments, submitPhotoComment, getCommentSettings, type PublicCommentDto } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface CommentsTabProps {
   photoId: string
@@ -11,10 +13,14 @@ interface CommentsTabProps {
 
 export function CommentsTab({ photoId }: CommentsTabProps) {
   const { t, locale } = useLanguage()
+  const { user, token } = useAuth()
+  const router = useRouter()
   const [comments, setComments] = useState<PublicCommentDto[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [linuxdoOnly, setLinuxdoOnly] = useState(false)
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [formData, setFormData] = useState({
     author: '',
     email: '',
@@ -25,9 +31,33 @@ export function CommentsTab({ photoId }: CommentsTabProps) {
     text: string
   } | null>(null)
 
+  // Check if user is logged in via Linux DO
+  const isLinuxDoUser = user?.oauthProvider === 'linuxdo'
+  // Determine if user can comment in Linux DO only mode
+  const canComment = !linuxdoOnly || isLinuxDoUser
+
   useEffect(() => {
     fetchComments()
+    fetchSettings()
   }, [photoId])
+
+  // Auto-fill author name for Linux DO users
+  useEffect(() => {
+    if (isLinuxDoUser && user?.username && !formData.author) {
+      setFormData(prev => ({ ...prev, author: user.username }))
+    }
+  }, [isLinuxDoUser, user?.username])
+
+  async function fetchSettings() {
+    try {
+      const settings = await getCommentSettings()
+      setLinuxdoOnly(settings.linuxdoOnly)
+    } catch (err) {
+      console.error('Failed to load comment settings:', err)
+    } finally {
+      setSettingsLoaded(true)
+    }
+  }
 
   async function fetchComments() {
     try {
@@ -50,6 +80,15 @@ export function CommentsTab({ photoId }: CommentsTabProps) {
       return
     }
 
+    // Double-check permission before submitting
+    if (linuxdoOnly && !isLinuxDoUser) {
+      setSubmitMessage({
+        type: 'error',
+        text: t('gallery.comment_linuxdo_only'),
+      })
+      return
+    }
+
     try {
       setSubmitting(true)
       setSubmitMessage(null)
@@ -58,7 +97,7 @@ export function CommentsTab({ photoId }: CommentsTabProps) {
         author: formData.author.trim(),
         email: formData.email.trim() || undefined,
         content: formData.content.trim(),
-      })
+      }, linuxdoOnly && isLinuxDoUser ? token : undefined)
 
       // Check if comment was approved or pending
       if (result.status === 'approved') {
@@ -91,7 +130,7 @@ export function CommentsTab({ photoId }: CommentsTabProps) {
     }
   }
 
-  if (loading) {
+  if (loading || !settingsLoaded) {
     return (
       <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8">
         <div className="space-y-4 animate-pulse">
@@ -150,6 +189,22 @@ export function CommentsTab({ photoId }: CommentsTabProps) {
 
       {/* Comment Form */}
       <div className="border-t border-border p-6 md:p-8 bg-muted/5 shrink-0">
+        {!canComment ? (
+          /* Linux DO only mode - show login prompt */
+          <div className="text-center py-4">
+            <p className="text-sm text-muted-foreground mb-4">
+              {t('gallery.comment_linuxdo_only')}
+            </p>
+            <button
+              type="button"
+              onClick={() => router.push('/login')}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-[#f8d568] text-[#1a1a1a] font-bold tracking-[0.15em] text-xs uppercase hover:bg-[#f5c842] transition-all"
+            >
+              <LogIn className="w-4 h-4" />
+              {t('gallery.comment_login_to_comment')}
+            </button>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -164,13 +219,22 @@ export function CommentsTab({ photoId }: CommentsTabProps) {
                 }
                 className="w-full px-3 py-2 bg-transparent border-b border-border focus:border-primary outline-none transition-colors text-sm text-foreground"
                 required
-                disabled={submitting}
+                disabled={submitting || isLinuxDoUser}
               />
             </div>
             <div>
               <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">
                 {t('gallery.comment_email')}
               </label>
+              {linuxdoOnly && isLinuxDoUser ? (
+                /* Show Linux DO user badge instead of email input */
+                <div className="flex items-center gap-2 px-3 py-2 bg-[#f8d568]/10 border-b border-[#f8d568]/30">
+                  <svg className="w-4 h-4 text-[#f8d568]" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                  </svg>
+                  <span className="text-sm text-[#f8d568] font-medium">Linux DO</span>
+                </div>
+              ) : (
               <input
                 type="email"
                 value={formData.email}
@@ -180,6 +244,7 @@ export function CommentsTab({ photoId }: CommentsTabProps) {
                 className="w-full px-3 py-2 bg-transparent border-b border-border focus:border-primary outline-none transition-colors text-sm text-foreground"
                 disabled={submitting}
               />
+              )}
             </div>
           </div>
 
@@ -221,6 +286,7 @@ export function CommentsTab({ photoId }: CommentsTabProps) {
             {submitting ? t('gallery.comment_submitting') : t('gallery.comment_submit')}
           </button>
         </form>
+        )}
       </div>
     </div>
   )

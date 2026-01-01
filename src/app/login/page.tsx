@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, FormEvent } from 'react'
+import { useState, useEffect, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
-import { login as apiLogin } from '@/lib/api'
-import { ArrowRight } from 'lucide-react'
+import { login as apiLogin, getLinuxDoAuthUrl, isLinuxDoEnabled } from '@/lib/api'
+import { ArrowRight, Loader2 } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 export default function LoginPage() {
@@ -12,9 +12,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [linuxDoLoading, setLinuxDoLoading] = useState(false)
+  const [linuxDoEnabled, setLinuxDoEnabled] = useState(false)
   const { login } = useAuth()
   const { t } = useLanguage()
   const router = useRouter()
+
+  useEffect(() => {
+    isLinuxDoEnabled().then(setLinuxDoEnabled)
+  }, [])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -22,13 +28,29 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const token = await apiLogin({ username, password })
-      login(token, username)
+      const { token, user } = await apiLogin({ username, password })
+      login(token, user)
       router.push('/admin')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleLinuxDoLogin = async () => {
+    setError('')
+    setLinuxDoLoading(true)
+
+    try {
+      const { url, state } = await getLinuxDoAuthUrl()
+      // Store state for CSRF verification
+      sessionStorage.setItem('linuxdo_oauth_state', state)
+      // Redirect to Linux DO authorization page
+      window.location.href = url
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to initiate OAuth')
+      setLinuxDoLoading(false)
     }
   }
 
@@ -90,6 +112,43 @@ export default function LoginPage() {
             {!loading && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
           </button>
         </form>
+
+        {/* Linux DO OAuth Login */}
+        {linuxDoEnabled && (
+          <>
+            <div className="relative my-8">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-border"></div>
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-4 text-muted-foreground tracking-widest">
+                  {t('login.or')}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleLinuxDoLogin}
+              disabled={linuxDoLoading}
+              className="w-full py-4 bg-[#f8d568] text-[#1a1a1a] font-bold tracking-[0.15em] text-xs uppercase hover:bg-[#f5c842] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 group"
+            >
+              {linuxDoLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  {t('login.auth')}
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                  </svg>
+                  {t('login.linuxdo_login')}
+                </>
+              )}
+            </button>
+          </>
+        )}
       </div>
     </div>
   )

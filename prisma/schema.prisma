@@ -12,9 +12,23 @@ datasource db {
 }
 
 model User {
-  id       String @id @default(uuid())
-  username String @unique
-  password String
+  id       String  @id @default(uuid())
+  username String  @unique
+  password String?
+
+  // OAuth fields
+  oauthProvider   String? // e.g., "linuxdo"
+  oauthId         String? // User ID from OAuth provider
+  oauthUsername   String? // Username from OAuth provider
+  avatarUrl       String? // Avatar URL from OAuth provider
+  trustLevel      Int?    // Trust level from Linux DO
+  isAdmin         Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([oauthProvider, oauthId])
+  @@index([oauthProvider])
 }
 
 model Photo {

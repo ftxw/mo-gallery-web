@@ -125,17 +125,17 @@ export function PhotoDetailModal({
         >
           <Toast notifications={notifications} remove={(id) => setNotifications(prev => prev.filter(n => n.id !== id))} />
           
-          {/* Close Button */}
-          <button
-            onClick={onClose}
-            className="absolute top-6 right-6 z-50 p-2 text-foreground/50 hover:text-foreground transition-colors"
-          >
-            <X className="w-6 h-6" />
-          </button>
-
           <div className="flex flex-col lg:flex-row w-full h-full overflow-hidden">
             {/* Left: Immersive Photo Viewer */}
             <div className="relative flex-1 bg-black/5 flex items-center justify-center group overflow-hidden">
+              {/* Close Button */}
+              <button
+                onClick={onClose}
+                className="absolute top-4 left-4 md:top-6 md:left-6 z-50 p-2.5 bg-black/20 hover:bg-black/40 text-white/90 hover:text-white rounded-full backdrop-blur-md transition-all border border-white/10"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
               <div className="absolute inset-0 flex items-center justify-center p-4 md:p-12">
                 <img
                   src={resolveAssetUrl(photo.url, settings?.cdn_domain)}

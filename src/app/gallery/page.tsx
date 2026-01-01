@@ -8,6 +8,8 @@ import { PhotoDetailModal } from '@/components/PhotoDetailModal'
 import { GalleryHeader, GalleryToolbar } from '@/components/gallery/GalleryHeader'
 import { PhotoGrid } from '@/components/gallery/PhotoGrid'
 import { ViewMode } from '@/components/gallery/ViewModeToggle'
+import { ArrowUp } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 
 export default function GalleryPage() {
   const { t } = useLanguage()
@@ -20,6 +22,7 @@ export default function GalleryPage() {
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<ViewMode>('masonry')
   const [grayscale, setGrayscale] = useState(true)
+  const [showBackToTop, setShowBackToTop] = useState(false)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -38,6 +41,18 @@ export default function GalleryPage() {
     }
     fetchData()
   }, [])
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowBackToTop(window.scrollY > 400)
+    }
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   const filteredPhotos = useMemo(() => {
     let filtered = photos
@@ -107,6 +122,21 @@ export default function GalleryPage() {
         onPhotoChange={setSelectedPhoto}
         allPhotos={filteredPhotos}
       />
+
+      <AnimatePresence>
+        {showBackToTop && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            onClick={scrollToTop}
+            className="fixed bottom-8 right-8 p-3 bg-primary text-primary-foreground rounded-full shadow-lg hover:shadow-xl transition-shadow z-50"
+            aria-label="Back to top"
+          >
+            <ArrowUp className="w-6 h-6" />
+          </motion.button>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

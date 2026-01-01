@@ -3,13 +3,18 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 
 interface User {
+  id?: string
   username: string
+  avatarUrl?: string
+  isAdmin?: boolean
+  oauthProvider?: string
+  trustLevel?: number
 }
 
 interface AuthContextType {
   user: User | null
   token: string | null
-  login: (token: string, username: string) => void
+  login: (token: string, user: User) => void
   logout: () => void
   isAuthenticated: boolean
   isReady: boolean
@@ -25,36 +30,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const storedToken = localStorage.getItem('token')
     const storedUser = localStorage.getItem('user')
-    const storedUsername = localStorage.getItem('username')
 
-    if (storedToken && (storedUser || storedUsername)) {
+    if (storedToken && storedUser) {
       setToken(storedToken)
-      if (storedUsername) {
-        setUser({ username: storedUsername })
-        setIsReady(true)
-        return
-      }
-      if (storedUser) {
-        try {
-          const parsed = JSON.parse(storedUser) as { username?: string; email?: string }
-          setUser({ username: parsed.username ?? parsed.email ?? 'admin' })
-        } catch {
-          setUser({ username: 'admin' })
-        } finally {
-          setIsReady(true)
-        }
-        return
+      try {
+        const parsed = JSON.parse(storedUser) as User
+        setUser(parsed)
+      } catch {
+        // Legacy format: just username string
+        setUser({ username: storedUser })
       }
     }
     setIsReady(true)
   }, [])
 
-  const login = (newToken: string, username: string) => {
+  const login = (newToken: string, newUser: User) => {
     setToken(newToken)
-    setUser({ username })
+    setUser(newUser)
     localStorage.setItem('token', newToken)
-    localStorage.setItem('username', username)
-    localStorage.setItem('user', JSON.stringify({ username }))
+    localStorage.setItem('user', JSON.stringify(newUser))
+    // Keep legacy field for backward compatibility
+    localStorage.setItem('username', newUser.username)
   }
 
   const logout = () => {

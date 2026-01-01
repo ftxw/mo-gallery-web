@@ -1,10 +1,12 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { BookOpen, MessageSquare, ChevronLeft, ChevronRight, CornerDownRight, Send } from 'lucide-react'
-import { getPhotoStory, type StoryDto, getPhotoComments, getStoryComments, submitPhotoComment, type PublicCommentDto, type PhotoDto, resolveAssetUrl } from '@/lib/api'
+import { BookOpen, MessageSquare, ChevronLeft, ChevronRight, CornerDownRight, Send, LogIn } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { getPhotoStory, type StoryDto, getPhotoComments, getStoryComments, submitPhotoComment, getCommentSettings, type PublicCommentDto, type PhotoDto, resolveAssetUrl } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useSettings } from '@/contexts/SettingsContext'
+import { useAuth } from '@/contexts/AuthContext'
 import ReactMarkdown from 'react-markdown'
 
 interface StoryTabProps {
@@ -16,6 +18,8 @@ interface StoryTabProps {
 export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps) {
   const { t, locale } = useLanguage()
   const { settings } = useSettings()
+  const { user, token } = useAuth()
+  const router = useRouter()
   const [story, setStory] = useState<StoryDto | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -25,6 +29,8 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
   const [comments, setComments] = useState<PublicCommentDto[]>([])
   const [commentsLoading, setCommentsLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [linuxdoOnly, setLinuxdoOnly] = useState(false)
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [formData, setFormData] = useState({
     author: '',
     email: '',
@@ -34,6 +40,11 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
     type: 'success' | 'error' | 'pending'
     text: string
   } | null>(null)
+
+  // Check if user is logged in via Linux DO
+  const isLinuxDoUser = user?.oauthProvider === 'linuxdo'
+  // Determine if user can comment in Linux DO only mode
+  const canComment = !linuxdoOnly || isLinuxDoUser
 
   // Use refs to track fetch state and prevent duplicate requests
   const fetchedForPhotoId = useRef<string | null>(null)
@@ -45,6 +56,28 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
   const isPhotoInCurrentStory = useCallback((pid: string) => {
     return story?.photos?.some(p => p.id === pid) ?? false
   }, [story?.photos])
+
+  // Fetch comment settings
+  useEffect(() => {
+    async function fetchSettings() {
+      try {
+        const settings = await getCommentSettings()
+        setLinuxdoOnly(settings.linuxdoOnly)
+      } catch (err) {
+        console.error('Failed to load comment settings:', err)
+      } finally {
+        setSettingsLoaded(true)
+      }
+    }
+    fetchSettings()
+  }, [])
+
+  // Auto-fill author name for Linux DO users
+  useEffect(() => {
+    if (isLinuxDoUser && user?.username && !formData.author) {
+      setFormData(prev => ({ ...prev, author: user.username }))
+    }
+  }, [isLinuxDoUser, user?.username])
 
   useEffect(() => {
     if (isPhotoInCurrentStory(photoId)) {
@@ -161,6 +194,15 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
     e.preventDefault()
     if (!formData.author.trim() || !formData.content.trim()) return
 
+    // Double-check permission before submitting
+    if (linuxdoOnly && !isLinuxDoUser) {
+      setSubmitMessage({
+        type: 'error',
+        text: t('gallery.comment_linuxdo_only'),
+      })
+      return
+    }
+
     try {
       setSubmitting(true)
       setSubmitMessage(null)
@@ -168,7 +210,7 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
         author: formData.author.trim(),
         email: formData.email.trim() || undefined,
         content: formData.content.trim(),
-      })
+      }, linuxdoOnly && isLinuxDoUser ? token : undefined)
 
       if (result.status === 'approved') {
         setSubmitMessage({ type: 'success', text: t('gallery.comment_success') })
@@ -366,6 +408,31 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
         {/* Comment Form */}
         <div className="relative group">
           <div className="absolute -inset-4 bg-muted/5 opacity-0 group-focus-within:opacity-100 transition-opacity pointer-events-none" />
+          {!settingsLoaded ? (
+            /* Loading state for settings */
+            <div className="space-y-8 animate-pulse">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="h-12 bg-muted rounded-none"></div>
+                <div className="h-12 bg-muted rounded-none"></div>
+              </div>
+              <div className="h-32 bg-muted rounded-none"></div>
+            </div>
+          ) : !canComment ? (
+            /* Linux DO only mode - show login prompt */
+            <div className="text-center py-8 border border-dashed border-border/50">
+              <p className="text-xs text-muted-foreground mb-6">
+                {t('gallery.comment_linuxdo_only')}
+              </p>
+              <button
+                type="button"
+                onClick={() => router.push('/login')}
+                className="inline-flex items-center gap-3 px-6 py-3 bg-[#f8d568] text-[#1a1a1a] font-bold tracking-[0.15em] text-xs uppercase hover:bg-[#f5c842] transition-all"
+              >
+                <LogIn className="w-4 h-4" />
+                {t('gallery.comment_login_to_comment')}
+              </button>
+            </div>
+          ) : (
           <form onSubmit={handleSubmit} className="relative space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-2">
@@ -378,13 +445,22 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
                   onChange={(e) => setFormData({ ...formData, author: e.target.value })}
                   className="w-full py-3 bg-transparent border-b border-border focus:border-primary outline-none transition-all text-sm font-serif"
                   required
-                  disabled={submitting}
+                  disabled={submitting || isLinuxDoUser}
                 />
               </div>
               <div className="space-y-2">
                 <label className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-[0.3em]">
                   {t('gallery.comment_email')}
                 </label>
+                {linuxdoOnly && isLinuxDoUser ? (
+                  /* Show Linux DO user badge instead of email input */
+                  <div className="flex items-center gap-2 py-3 bg-[#f8d568]/10 border-b border-[#f8d568]/30 px-2">
+                    <svg className="w-4 h-4 text-[#f8d568]" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                    </svg>
+                    <span className="text-sm text-[#f8d568] font-medium">Linux DO</span>
+                  </div>
+                ) : (
                 <input
                   type="email"
                   value={formData.email}
@@ -393,6 +469,7 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
                   placeholder="Optional"
                   disabled={submitting}
                 />
+                )}
               </div>
             </div>
 
@@ -430,6 +507,7 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
               </div>
             </button>
           </form>
+          )}
         </div>
       </div>
     </div>

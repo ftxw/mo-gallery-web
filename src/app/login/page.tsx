@@ -46,6 +46,22 @@ export default function LoginPage() {
       const { url, state } = await getLinuxDoAuthUrl()
       // Store state for CSRF verification
       sessionStorage.setItem('linuxdo_oauth_state', state)
+      // Store current URL to return to after login (for non-admin users)
+      // Use referrer if available, otherwise use current pathname
+      const referrer = document.referrer
+      const currentPath = window.location.pathname
+      if (referrer && !referrer.includes('/login')) {
+        try {
+          const referrerUrl = new URL(referrer)
+          sessionStorage.setItem('login_return_url', referrerUrl.pathname)
+        } catch {
+          sessionStorage.setItem('login_return_url', '/')
+        }
+      } else if (currentPath !== '/login') {
+        sessionStorage.setItem('login_return_url', currentPath)
+      } else {
+        sessionStorage.setItem('login_return_url', '/')
+      }
       // Redirect to Linux DO authorization page
       window.location.href = url
     } catch (err) {

@@ -2,14 +2,14 @@ import 'server-only'
 import { Hono } from 'hono'
 import { signToken } from '~/server/lib/jwt'
 import { db } from '~/server/lib/db'
+import { authMiddleware, AuthVariables } from './middleware/auth'
 
-const auth = new Hono()
+const auth = new Hono<{ Variables: AuthVariables }>()
 
 // Linux DO OAuth configuration
 const LINUXDO_CLIENT_ID = process.env.LINUXDO_CLIENT_ID || ''
 const LINUXDO_CLIENT_SECRET = process.env.LINUXDO_CLIENT_SECRET || ''
 const LINUXDO_REDIRECT_URI = process.env.LINUXDO_REDIRECT_URI || ''
-const LINUXDO_ADMIN_USERNAMES = (process.env.LINUXDO_ADMIN_USERNAMES || '').split(',').map(s => s.trim()).filter(Boolean)
 
 // Linux DO OAuth endpoints (备用端点优先，解决网络问题)
 const LINUXDO_AUTHORIZE_URL = 'https://connect.linux.do/oauth2/authorize'
@@ -111,7 +111,17 @@ auth.post('/linuxdo/callback', async (c) => {
     return c.json({ error: 'Your Linux DO account is not active or has been silenced' }, 403)
   }
 
-  const isAdmin = LINUXDO_ADMIN_USERNAMES.includes(userData.username) || userData.trust_level >= 4
+  // Check if this Linux DO account is already bound to an admin user
+  const existingUser = await db.user.findFirst({
+    where: {
+      oauthProvider: 'linuxdo',
+      oauthId: String(userData.id),
+    },
+  })
+
+  // Only existing users with isAdmin=true can be admin via Linux DO login
+  // New users are always non-admin (must bind via admin panel first)
+  const isAdmin = existingUser?.isAdmin ?? false
 
   // Find or create user in database
   const user = await db.user.upsert({
@@ -125,7 +135,7 @@ auth.post('/linuxdo/callback', async (c) => {
       oauthUsername: userData.username,
       avatarUrl: userData.avatar_url,
       trustLevel: userData.trust_level,
-      isAdmin,
+      // Don't update isAdmin here - preserve existing value
     },
     create: {
       username: `linuxdo_${userData.id}`,
@@ -134,7 +144,7 @@ auth.post('/linuxdo/callback', async (c) => {
       oauthUsername: userData.username,
       avatarUrl: userData.avatar_url,
       trustLevel: userData.trust_level,
-      isAdmin,
+      isAdmin: false, // New users are never admin
     },
   })
 
@@ -163,6 +173,158 @@ auth.post('/linuxdo/callback', async (c) => {
 // Check if Linux DO OAuth is enabled
 auth.get('/linuxdo/enabled', (c) => {
   return c.json({ enabled: Boolean(LINUXDO_CLIENT_ID && LINUXDO_CLIENT_SECRET && LINUXDO_REDIRECT_URI) })
+})
+
+// Get admin's bound Linux DO account info
+auth.get('/linuxdo/binding', authMiddleware, async (c) => {
+  try {
+    // Find admin user with Linux DO binding
+    const boundUser = await db.user.findFirst({
+      where: {
+        isAdmin: true,
+        oauthProvider: 'linuxdo',
+        oauthId: { not: null },
+      },
+      select: {
+        id: true,
+        oauthUsername: true,
+        avatarUrl: true,
+        trustLevel: true,
+      },
+    })
+
+    return c.json({
+      success: true,
+      binding: boundUser ? {
+        username: boundUser.oauthUsername,
+        avatarUrl: boundUser.avatarUrl,
+        trustLevel: boundUser.trustLevel,
+      } : null,
+    })
+  } catch (error) {
+    console.error('Get Linux DO binding error:', error)
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+})
+
+// Bind Linux DO account to admin (requires admin auth)
+auth.post('/linuxdo/bind', authMiddleware, async (c) => {
+  const { code } = await c.req.json()
+
+  if (!code) {
+    return c.json({ error: 'Authorization code is required' }, 400)
+  }
+
+  // Exchange code for access token
+  const tokenResponse = await fetch(LINUXDO_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: LINUXDO_REDIRECT_URI,
+      client_id: LINUXDO_CLIENT_ID,
+      client_secret: LINUXDO_CLIENT_SECRET,
+    }),
+  })
+
+  if (!tokenResponse.ok) {
+    return c.json({ error: 'Failed to exchange authorization code' }, 400)
+  }
+
+  const { access_token } = await tokenResponse.json() as { access_token: string }
+  if (!access_token) {
+    return c.json({ error: 'No access token received' }, 400)
+  }
+
+  // Get user info from Linux DO
+  const userResponse = await fetch(LINUXDO_USER_URL, {
+    headers: { Authorization: `Bearer ${access_token}` },
+  })
+
+  if (!userResponse.ok) {
+    return c.json({ error: 'Failed to get user info' }, 400)
+  }
+
+  const userData = await userResponse.json() as {
+    id: number
+    username: string
+    avatar_url: string
+    trust_level: number
+    active: boolean
+    silenced: boolean
+  }
+
+  if (!userData.active || userData.silenced) {
+    return c.json({ error: 'Your Linux DO account is not active or has been silenced' }, 403)
+  }
+
+  // Check if this Linux DO account is already bound to another user
+  const existingBinding = await db.user.findFirst({
+    where: {
+      oauthProvider: 'linuxdo',
+      oauthId: String(userData.id),
+    },
+  })
+
+  if (existingBinding) {
+    // If already bound, just update it to be admin
+    await db.user.update({
+      where: { id: existingBinding.id },
+      data: {
+        isAdmin: true,
+        oauthUsername: userData.username,
+        avatarUrl: userData.avatar_url,
+        trustLevel: userData.trust_level,
+      },
+    })
+  } else {
+    // Create new binding as admin
+    await db.user.create({
+      data: {
+        username: `linuxdo_${userData.id}`,
+        oauthProvider: 'linuxdo',
+        oauthId: String(userData.id),
+        oauthUsername: userData.username,
+        avatarUrl: userData.avatar_url,
+        trustLevel: userData.trust_level,
+        isAdmin: true,
+      },
+    })
+  }
+
+  return c.json({
+    success: true,
+    binding: {
+      username: userData.username,
+      avatarUrl: userData.avatar_url,
+      trustLevel: userData.trust_level,
+    },
+  })
+})
+
+// Unbind Linux DO account from admin (requires admin auth)
+auth.delete('/linuxdo/bind', authMiddleware, async (c) => {
+  try {
+    // Find and remove admin binding
+    const result = await db.user.updateMany({
+      where: {
+        isAdmin: true,
+        oauthProvider: 'linuxdo',
+      },
+      data: {
+        isAdmin: false,
+      },
+    })
+
+    return c.json({
+      success: true,
+      unboundCount: result.count,
+    })
+  } catch (error) {
+    console.error('Unbind Linux DO error:', error)
+    return c.json({ error: 'Internal server error' }, 500)
+  }
 })
 
 export default auth

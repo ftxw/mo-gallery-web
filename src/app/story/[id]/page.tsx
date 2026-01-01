@@ -10,6 +10,7 @@ import remarkGfm from 'remark-gfm'
 import { getStory, type StoryDto, type PhotoDto, resolveAssetUrl } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useSettings } from '@/contexts/SettingsContext'
+import { StoryComments } from '@/components/StoryComments'
 
 export default function StoryDetailPage() {
   const params = useParams()
@@ -104,6 +105,7 @@ export default function StoryDetailPage() {
 
   const coverPhoto = getCoverPhoto()
   const coverUrl = coverPhoto ? getPhotoUrl(coverPhoto) : null
+  const targetPhotoId = story.coverPhotoId || story.photos[0]?.id
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -269,6 +271,9 @@ export default function StoryDetailPage() {
               ))}
             </div>
           </section>
+
+          {/* Comments Section */}
+          {targetPhotoId && <StoryComments storyId={story.id} targetPhotoId={targetPhotoId} />}
 
           {/* Footer Nav */}
           <div className="mt-40 pt-24 border-t border-border/50 text-center">

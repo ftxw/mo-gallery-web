@@ -394,7 +394,13 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
                   </span>
                   <div className="w-1 h-1 rounded-full bg-border" />
                   <span className="text-[9px] font-mono text-muted-foreground/60 uppercase tracking-widest">
-                    {new Date(comment.createdAt).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en-US')}
+                    {new Date(comment.createdAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US', {
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
                   </span>
                 </div>
                 <p className="text-sm font-serif leading-relaxed text-foreground/70">

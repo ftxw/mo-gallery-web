@@ -8,7 +8,6 @@ import {
   Aperture,
   Timer,
   Gauge,
-  Calendar,
   MapPin,
   Download,
   Info,
@@ -20,6 +19,7 @@ import {
 import { PhotoDto, resolveAssetUrl } from '@/lib/api'
 import { useSettings } from '@/contexts/SettingsContext'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { formatFileSize } from '@/lib/utils'
 import { Toast, type Notification } from '@/components/Toast'
 import { StoryTab } from '@/components/StoryTab'
@@ -43,6 +43,7 @@ export function PhotoDetailModal({
 }: PhotoDetailModalProps) {
   const { settings } = useSettings()
   const { t, locale } = useLanguage()
+  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<TabType>('story')
   const [dominantColors, setDominantColors] = useState<string[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -171,7 +172,16 @@ export function PhotoDetailModal({
                     <p className="font-serif text-2xl md:text-3xl">{photo.title}</p>
                     {photo.takenAt && (
                       <p className="font-mono text-xs opacity-70 uppercase tracking-widest">
-                        {new Date(photo.takenAt).toLocaleDateString(locale, { dateStyle: 'long' })}
+                        {user?.isAdmin
+                          ? new Date(photo.takenAt).toLocaleString(locale, {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : new Date(photo.takenAt).toLocaleDateString(locale, { dateStyle: 'long' })
+                        }
                       </p>
                     )}
                   </div>

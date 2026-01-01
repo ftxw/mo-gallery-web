@@ -173,6 +173,7 @@ export interface PublicCommentDto {
   author: string
   content: string
   createdAt: string
+  photoId?: string
 }
 
 export interface StoryDto {
@@ -255,6 +256,35 @@ export async function isLinuxDoEnabled(): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+// Linux DO Admin Binding APIs
+export interface LinuxDoBinding {
+  username: string | null
+  avatarUrl: string | null
+  trustLevel: number | null
+}
+
+export async function getLinuxDoBinding(token: string): Promise<LinuxDoBinding | null> {
+  const result = await apiRequestData<{ binding: LinuxDoBinding | null }>('/api/auth/linuxdo/binding', {}, token)
+  return result.binding
+}
+
+export async function bindLinuxDoAccount(token: string, code: string): Promise<LinuxDoBinding> {
+  const envelope = await apiRequest('/api/auth/linuxdo/bind', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  }, token)
+  if (!('binding' in envelope)) {
+    throw new Error('Unexpected response (missing binding)')
+  }
+  return (envelope as { binding: LinuxDoBinding }).binding
+}
+
+export async function unbindLinuxDoAccount(token: string): Promise<void> {
+  await apiRequest('/api/auth/linuxdo/bind', {
+    method: 'DELETE',
+  }, token)
 }
 
 export async function getCategories(): Promise<string[]> {

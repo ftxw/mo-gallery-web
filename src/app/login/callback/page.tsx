@@ -10,6 +10,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 function OAuthCallbackContent() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
   const [error, setError] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
   const { login } = useAuth()
   const { t } = useLanguage()
   const router = useRouter()
@@ -42,14 +43,25 @@ function OAuthCallbackContent() {
       }
       sessionStorage.removeItem('linuxdo_oauth_state')
 
+      // Get the return URL (where user came from before login)
+      const returnUrl = sessionStorage.getItem('login_return_url') || '/'
+      sessionStorage.removeItem('login_return_url')
+
       try {
         const { token, user } = await loginWithLinuxDo(code)
         login(token, user)
         setStatus('success')
+        setIsAdmin(user.isAdmin || false)
 
-        // Redirect to admin after a short delay
+        // Redirect based on user role
         setTimeout(() => {
-          router.push('/admin')
+          if (user.isAdmin) {
+            // Admin users go to admin panel
+            router.push('/admin')
+          } else {
+            // Regular users return to where they came from or home
+            router.push(returnUrl)
+          }
         }, 1500)
       } catch (err) {
         setStatus('error')
@@ -81,7 +93,7 @@ function OAuthCallbackContent() {
             {t('login.oauth_success')}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {t('login.oauth_redirect')}
+            {isAdmin ? t('login.oauth_redirect') : t('login.oauth_redirect_home')}
           </p>
         </>
       )}

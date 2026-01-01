@@ -15,7 +15,7 @@ export function MasonryView({ photos, settings, grayscale, onPhotoClick }: Mason
   return (
     <motion.div
       layout
-      className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-6 space-y-6"
+      className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-8"
     >
       <AnimatePresence mode="popLayout">
         {photos.map((photo, index) => (

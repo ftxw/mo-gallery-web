@@ -15,38 +15,46 @@ export function GridView({ photos, settings, grayscale, onPhotoClick }: GridView
   return (
     <motion.div
       layout
-      className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-1"
+      className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-8"
     >
       <AnimatePresence mode="popLayout">
         {photos.map((photo, index) => (
           <motion.div
             key={photo.id}
             layout
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            transition={{ duration: 0.3, delay: (index % 10) * 0.03 }}
-            className="group relative aspect-square cursor-pointer overflow-hidden bg-muted"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.5, delay: (index % 10) * 0.05 }}
+            className="group cursor-pointer"
             onClick={() => onPhotoClick(photo)}
           >
-            <img
-              src={resolveAssetUrl(photo.thumbnailUrl || photo.url, settings?.cdn_domain)}
-              alt={photo.title}
-              className={`w-full h-full object-cover transition-all duration-700 ease-out group-hover:scale-110 ${
-                grayscale ? 'grayscale group-hover:grayscale-0' : ''
-              }`}
-            />
+            <div className="relative aspect-square overflow-hidden bg-muted mb-3">
+              <img
+                src={resolveAssetUrl(photo.thumbnailUrl || photo.url, settings?.cdn_domain)}
+                alt={photo.title}
+                className={`w-full h-full object-cover transition-all duration-700 ease-out group-hover:scale-105 ${
+                  grayscale ? 'grayscale group-hover:grayscale-0' : ''
+                }`}
+              />
 
-            {/* Hover Overlay */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
-              <div className="translate-y-2 group-hover:translate-y-0 transition-transform duration-300">
-                <p className="text-[8px] font-black text-primary uppercase tracking-[0.2em] mb-1">
-                  {photo.category.split(',')[0]}
-                </p>
-                <h3 className="text-sm font-serif text-white leading-tight line-clamp-2">
-                  {photo.title}
-                </h3>
-              </div>
+              {/* Minimal Overlay on Hover */}
+              <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            </div>
+
+            {/* Meta Data - Below Image */}
+            <div className="flex justify-between items-start opacity-60 group-hover:opacity-100 transition-opacity">
+               <div className="space-y-1">
+                 <h3 className="text-xs font-serif leading-tight text-foreground line-clamp-1 group-hover:text-primary transition-colors">
+                    {photo.title}
+                 </h3>
+                 <p className="text-[9px] font-mono text-muted-foreground uppercase tracking-widest">
+                    {photo.category.split(',')[0]}
+                 </p>
+               </div>
+               <span className="text-[9px] font-mono text-muted-foreground/60">
+                 {String(index + 1).padStart(2, '0')}
+               </span>
             </div>
           </motion.div>
         ))}

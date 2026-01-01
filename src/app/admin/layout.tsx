@@ -15,6 +15,7 @@ import {
   Sun,
   Monitor,
   FolderOpen,
+  Users,
 } from 'lucide-react'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/contexts/AuthContext'
@@ -399,6 +400,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
     { id: 'photos', href: '/admin/photos', label: t('admin.library'), icon: ImageIcon },
     { id: 'albums', href: '/admin/albums', label: t('admin.albums'), icon: FolderOpen },
     { id: 'upload', href: '/admin/upload', label: t('admin.upload'), icon: UploadIcon },
+    { id: 'friends', href: '/admin/friends', label: t('admin.friends'), icon: Users },
     { id: 'logs', href: '/admin/logs', label: t('admin.logs'), icon: BookText },
     { id: 'settings', href: '/admin/settings', label: t('admin.config'), icon: Settings },
   ]
@@ -408,6 +410,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
     if (pathname.startsWith('/admin/photos')) return 'photos'
     if (pathname.startsWith('/admin/albums')) return 'albums'
     if (pathname.startsWith('/admin/upload')) return 'upload'
+    if (pathname.startsWith('/admin/friends')) return 'friends'
     if (pathname.startsWith('/admin/logs')) return 'logs'
     if (pathname.startsWith('/admin/settings')) return 'settings'
     return 'photos'
@@ -421,6 +424,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
       case 'photos': return t('admin.library')
       case 'albums': return t('admin.albums')
       case 'upload': return t('admin.upload')
+      case 'friends': return t('admin.friends')
       case 'logs': return t('admin.logs')
       case 'settings': return t('admin.config')
       default: return t('admin.library')

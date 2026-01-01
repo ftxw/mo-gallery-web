@@ -8,6 +8,7 @@ import stories from './stories'
 import comments from './comments'
 import blogs from './blogs'
 import albums from './albums'
+import friends from './friends'
 
 const route = new Hono()
 
@@ -36,6 +37,7 @@ route.route('/', stories)
 route.route('/', comments)
 route.route('/', blogs)
 route.route('/', albums)
+route.route('/', friends)
 route.route('/admin/settings', settings)
 
 export default route

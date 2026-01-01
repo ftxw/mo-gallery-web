@@ -54,6 +54,14 @@ export default function Navbar() {
     return null
   }
 
+  // Check if a menu item is active
+  const isMenuItemActive = (itemPath: string) => {
+    if (itemPath === '/') {
+      return pathname === '/'
+    }
+    return pathname.startsWith(itemPath)
+  }
+
   const handleLogout = () => {
     logout()
     // 无感退出：不跳转页面，只清除登录状态，UI 会自动更新为未登录状态
@@ -152,24 +160,46 @@ export default function Navbar() {
                   { name: t('nav.home'), path: '/' },
                   { name: t('nav.gallery'), path: '/gallery' },
                   { name: t('nav.story'), path: '/story' },
+                  { name: t('nav.they'), path: '/they' },
                   { name: t('nav.about'), path: '/about' },
-                ].map((item) => (
-                  <Link
-                    key={item.path}
-                    href={item.path}
-                    className={cn(
-                      "font-sans text-xs font-medium tracking-[0.2em] transition-colors duration-300 uppercase relative group",
-                      textColorClass,
-                      hoverColorClass
-                    )}
-                  >
-                    {item.name}
-                    <span className={cn(
-                      "absolute -bottom-1 left-0 w-0 h-[1px] transition-all duration-300 group-hover:w-full",
-                       isTransparent ? "bg-white" : "bg-primary"
-                    )} />
-                  </Link>
-                ))}
+                ].map((item) => {
+                  const isActive = isMenuItemActive(item.path)
+                  return (
+                    <Link
+                      key={item.path}
+                      href={item.path}
+                      className={cn(
+                        "font-sans text-xs font-medium tracking-[0.2em] transition-colors duration-300 uppercase relative group",
+                        isActive 
+                          ? (isTransparent ? "text-white" : "text-primary")
+                          : textColorClass,
+                        !isActive && hoverColorClass
+                      )}
+                    >
+                      {item.name}
+                      {/* Underline indicator */}
+                      <motion.span 
+                        className={cn(
+                          "absolute -bottom-1 left-0 h-[1px]",
+                          isTransparent ? "bg-white" : "bg-primary"
+                        )}
+                        initial={false}
+                        animate={{ 
+                          width: isActive ? '100%' : '0%',
+                          opacity: isActive ? 1 : 0
+                        }}
+                        transition={{ duration: 0.3, ease: 'easeInOut' }}
+                      />
+                      {/* Hover underline (only when not active) */}
+                      {!isActive && (
+                        <span className={cn(
+                          "absolute -bottom-1 left-0 w-0 h-[1px] transition-all duration-300 group-hover:w-full",
+                          isTransparent ? "bg-white" : "bg-primary"
+                        )} />
+                      )}
+                    </Link>
+                  )
+                })}
               </div>
 
               <div className={cn("h-4 w-[1px]", isTransparent ? "bg-white/30" : "bg-border")}></div>
@@ -254,24 +284,42 @@ export default function Navbar() {
                   { name: t('nav.home'), path: '/' },
                   { name: t('nav.gallery'), path: '/gallery' },
                   { name: t('nav.story'), path: '/story' },
+                  { name: t('nav.they'), path: '/they' },
                   { name: t('nav.about'), path: '/about' },
-                ].map((item, index) => (
-                  <motion.div
-                    key={item.path}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                  >
-                    <Link
-                      href={item.path}
-                      className={`block py-4 font-serif text-3xl tracking-tight transition-colors ${
-                        pathname === item.path ? 'text-primary' : 'text-foreground hover:text-primary'
-                      }`}
+                ].map((item, index) => {
+                  const isActive = isMenuItemActive(item.path)
+                  return (
+                    <motion.div
+                      key={item.path}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05 }}
                     >
-                      {item.name}
-                    </Link>
-                  </motion.div>
-                ))}
+                      <Link
+                        href={item.path}
+                        className={cn(
+                          "block py-4 font-serif text-3xl tracking-tight transition-colors relative",
+                          isActive 
+                            ? 'text-primary' 
+                            : 'text-foreground hover:text-primary'
+                        )}
+                      >
+                        <span className="relative">
+                          {item.name}
+                          {/* Active indicator for mobile */}
+                          {isActive && (
+                            <motion.span
+                              className="absolute -bottom-1 left-0 h-[2px] bg-primary"
+                              initial={{ width: 0 }}
+                              animate={{ width: '100%' }}
+                              transition={{ duration: 0.3, ease: 'easeOut' }}
+                            />
+                          )}
+                        </span>
+                      </Link>
+                    </motion.div>
+                  )
+                })}
               </nav>
 
               {/* Divider */}

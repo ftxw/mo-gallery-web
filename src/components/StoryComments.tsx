@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import { motion, AnimatePresence } from 'framer-motion'
 import { MessageSquare, LogIn, Send, CornerDownRight } from 'lucide-react'
 import { getStoryComments, submitPhotoComment, getCommentSettings, type PublicCommentDto } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuth } from '@/contexts/AuthContext'
+import { Toast, type Notification } from '@/components/Toast'
 
 interface StoryCommentsProps {
   storyId: string
@@ -28,10 +30,7 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
     email: '',
     content: '',
   })
-  const [submitMessage, setSubmitMessage] = useState<{
-    type: 'success' | 'error' | 'pending'
-    text: string
-  } | null>(null)
+  const [notifications, setNotifications] = useState<Notification[]>([])
 
   const isLinuxDoUser = user?.oauthProvider === 'linuxdo'
   const canComment = !linuxdoOnly || isLinuxDoUser
@@ -74,15 +73,36 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
     }
   }
 
+  // Seamless refresh comments without loading state
+  async function refreshComments() {
+    try {
+      // Don't set loading to avoid flickering
+      const data = await getStoryComments(storyId)
+      // Sort by newest first
+      data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      setComments(data)
+    } catch (err) {
+      console.error('Failed to refresh comments:', err)
+    }
+  }
+
+  const notify = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    const id = Math.random().toString(36).substring(2, 9)
+    setNotifications(prev => [...prev, { id, message, type }])
+    setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 4000)
+  }, [])
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
     if (!formData.author.trim() || !formData.content.trim()) return
-    if (linuxdoOnly && !isLinuxDoUser) return
+    if (linuxdoOnly && !isLinuxDoUser) {
+      notify(t('gallery.comment_linuxdo_only'), 'error')
+      return
+    }
 
     try {
       setSubmitting(true)
-      setSubmitMessage(null)
 
       const result = await submitPhotoComment(targetPhotoId, {
         author: formData.author.trim(),
@@ -91,20 +111,21 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
       }, linuxdoOnly && isLinuxDoUser ? token : undefined)
 
       if (result.status === 'approved') {
-        setSubmitMessage({ type: 'success', text: t('gallery.comment_success') })
-        await fetchComments()
+        notify(t('gallery.comment_success'), 'success')
+        await refreshComments()
       } else {
-        setSubmitMessage({ type: 'pending', text: t('gallery.comment_pending') })
+        notify(t('gallery.comment_pending'), 'info')
       }
 
-      setFormData({ author: '', email: '', content: '' })
-      setTimeout(() => setSubmitMessage(null), 5000)
+      // Keep author name for Linux DO users, only clear content
+      setFormData(prev => ({
+        author: isLinuxDoUser && user?.username ? user.username : '',
+        email: '',
+        content: ''
+      }))
     } catch (err) {
       console.error('Failed to submit comment:', err)
-      setSubmitMessage({
-        type: 'error',
-        text: err instanceof Error ? err.message : t('gallery.comment_error'),
-      })
+      notify(err instanceof Error ? err.message : t('gallery.comment_error'), 'error')
     } finally {
       setSubmitting(false)
     }
@@ -119,7 +140,8 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
   if (!settingsLoaded && loading) return null
 
   return (
-    <div className="max-w-screen-md mx-auto mt-32 mb-24 px-6 md:px-0">
+    <div className="max-w-screen-md mx-auto mt-32 mb-24 px-6 md:px-0 relative">
+      <Toast notifications={notifications} remove={(id) => setNotifications(prev => prev.filter(n => n.id !== id))} />
       <div className="pt-16 border-t border-border/50">
         <div className="flex items-center justify-between mb-12">
           <div className="flex items-center gap-4">
@@ -130,52 +152,8 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
           </div>
         </div>
 
-        {/* Comments List */}
-        {loading ? (
-          <div className="space-y-8 animate-pulse mb-12">
-            {[...Array(2)].map((_, i) => (
-              <div key={i} className="space-y-3">
-                <div className="h-4 bg-muted rounded-none w-1/4"></div>
-                <div className="h-4 bg-muted rounded-none w-full"></div>
-              </div>
-            ))}
-          </div>
-        ) : comments.length === 0 ? (
-          <div className="text-center py-12 mb-12 bg-muted/5 border border-border/50">
-            <p className="text-xs font-serif italic text-muted-foreground/60">{t('gallery.no_comments')}</p>
-          </div>
-        ) : (
-          <div className="space-y-12 mb-16">
-            {comments.map((comment) => (
-              <div key={comment.id} className="relative pl-8">
-                <div className="absolute left-0 top-0 text-primary/20">
-                  <CornerDownRight className="w-4 h-4" />
-                </div>
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="text-xs font-bold text-foreground tracking-tight">
-                    {comment.author}
-                  </span>
-                  <div className="w-1 h-1 rounded-full bg-border" />
-                  <span className="text-[9px] font-mono text-muted-foreground/60 uppercase tracking-widest">
-                    {new Date(comment.createdAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US', {
-                      year: 'numeric',
-                      month: '2-digit',
-                      day: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                </div>
-                <p className="text-sm font-serif leading-relaxed text-foreground/70">
-                  {comment.content}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Comment Form */}
-        <div className="relative group">
+        {/* Comment Form - Now at the top */}
+        <div className="relative group mb-16">
           <div className="absolute -inset-4 bg-muted/5 opacity-0 group-focus-within:opacity-100 transition-opacity pointer-events-none" />
           {!canComment ? (
             /* Linux DO only mode - show login prompt */
@@ -246,16 +224,6 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
                 />
               </div>
 
-              {submitMessage && (
-                <div className={`text-[10px] p-4 font-mono uppercase tracking-widest border ${
-                  submitMessage.type === 'success' ? 'bg-primary/5 border-primary/20 text-primary' :
-                  submitMessage.type === 'pending' ? 'bg-amber-500/5 border-amber-500/20 text-amber-600' :
-                  'bg-destructive/5 border-destructive/20 text-destructive'
-                }`}>
-                  {submitMessage.text}
-                </div>
-              )}
-
               <button
                 type="submit"
                 disabled={submitting || !formData.author.trim() || !formData.content.trim()}
@@ -269,6 +237,64 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
             </form>
           )}
         </div>
+
+        {/* Comments List - Now at the bottom with smooth animations */}
+        {loading ? (
+          <div className="space-y-8 animate-pulse">
+            {[...Array(2)].map((_, i) => (
+              <div key={i} className="space-y-3">
+                <div className="h-4 bg-muted rounded-none w-1/4"></div>
+                <div className="h-4 bg-muted rounded-none w-full"></div>
+              </div>
+            ))}
+          </div>
+        ) : comments.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-center py-12 bg-muted/5 border border-border/50"
+          >
+            <p className="text-xs font-serif italic text-muted-foreground/60">{t('gallery.no_comments')}</p>
+          </motion.div>
+        ) : (
+          <motion.div layout className="space-y-12">
+            <AnimatePresence mode="popLayout">
+              {comments.map((comment) => (
+                <motion.div
+                  key={comment.id}
+                  layout
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 20 }}
+                  transition={{ duration: 0.3, ease: 'easeOut' }}
+                  className="relative pl-8"
+                >
+                  <div className="absolute left-0 top-0 text-primary/20">
+                    <CornerDownRight className="w-4 h-4" />
+                  </div>
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-xs font-bold text-foreground tracking-tight">
+                      {comment.author}
+                    </span>
+                    <div className="w-1 h-1 rounded-full bg-border" />
+                    <span className="text-[9px] font-mono text-muted-foreground/60 uppercase tracking-widest">
+                      {new Date(comment.createdAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                  <p className="text-sm font-serif leading-relaxed text-foreground/70">
+                    {comment.content}
+                  </p>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </motion.div>
+        )}
       </div>
     </div>
   )

@@ -143,3 +143,20 @@ model Blog {
   @@index([createdAt])
   @@index([category])
 }
+
+model FriendLink {
+  id          String   @id @default(cuid())
+  name        String
+  url         String
+  description String?
+  avatar      String?
+  featured    Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([sortOrder])
+  @@index([featured])
+}

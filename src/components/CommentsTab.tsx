@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { MessageSquare, LogIn } from 'lucide-react'
 import { getPhotoComments, submitPhotoComment, getCommentSettings, type PublicCommentDto } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuth } from '@/contexts/AuthContext'
+import { Toast, type Notification } from '@/components/Toast'
 
 interface CommentsTabProps {
   photoId: string
@@ -27,10 +28,7 @@ export function CommentsTab({ photoId }: CommentsTabProps) {
     email: '',
     content: '',
   })
-  const [submitMessage, setSubmitMessage] = useState<{
-    type: 'success' | 'error' | 'pending'
-    text: string
-  } | null>(null)
+  const [notifications, setNotifications] = useState<Notification[]>([])
 
   // Check if user is logged in via Linux DO
   const isLinuxDoUser = user?.oauthProvider === 'linuxdo'
@@ -74,6 +72,12 @@ export function CommentsTab({ photoId }: CommentsTabProps) {
     }
   }
 
+  const notify = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    const id = Math.random().toString(36).substring(2, 9)
+    setNotifications(prev => [...prev, { id, message, type }])
+    setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 4000)
+  }, [])
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
@@ -83,16 +87,12 @@ export function CommentsTab({ photoId }: CommentsTabProps) {
 
     // Double-check permission before submitting
     if (linuxdoOnly && !isLinuxDoUser) {
-      setSubmitMessage({
-        type: 'error',
-        text: t('gallery.comment_linuxdo_only'),
-      })
+      notify(t('gallery.comment_linuxdo_only'), 'error')
       return
     }
 
     try {
       setSubmitting(true)
-      setSubmitMessage(null)
 
       const result = await submitPhotoComment(photoId, {
         author: formData.author.trim(),
@@ -102,30 +102,22 @@ export function CommentsTab({ photoId }: CommentsTabProps) {
 
       // Check if comment was approved or pending
       if (result.status === 'approved') {
-        setSubmitMessage({
-          type: 'success',
-          text: t('gallery.comment_success'),
-        })
+        notify(t('gallery.comment_success'), 'success')
         // Refresh comments to show the new one
         await fetchComments()
       } else {
-        setSubmitMessage({
-          type: 'pending',
-          text: t('gallery.comment_pending'),
-        })
+        notify(t('gallery.comment_pending'), 'info')
       }
 
-      // Clear form
-      setFormData({ author: '', email: '', content: '' })
-
-      // Clear message after 5 seconds
-      setTimeout(() => setSubmitMessage(null), 5000)
+      // Clear form - keep author name for Linux DO users
+      setFormData(prev => ({
+        author: isLinuxDoUser && user?.username ? user.username : '',
+        email: '',
+        content: ''
+      }))
     } catch (err) {
       console.error('Failed to submit comment:', err)
-      setSubmitMessage({
-        type: 'error',
-        text: err instanceof Error ? err.message : t('gallery.comment_error'),
-      })
+      notify(err instanceof Error ? err.message : t('gallery.comment_error'), 'error')
     } finally {
       setSubmitting(false)
     }
@@ -148,7 +140,8 @@ export function CommentsTab({ photoId }: CommentsTabProps) {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
+      <Toast notifications={notifications} remove={(id) => setNotifications(prev => prev.filter(n => n.id !== id))} />
       {/* Comments List */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8 space-y-6">
         {error ? (
@@ -267,20 +260,6 @@ export function CommentsTab({ photoId }: CommentsTabProps) {
               disabled={submitting}
             />
           </div>
-
-          {submitMessage && (
-            <div
-              className={`text-xs p-3 border ${
-                submitMessage.type === 'success'
-                  ? 'bg-primary/10 border-primary/20 text-primary'
-                  : submitMessage.type === 'pending'
-                  ? 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400'
-                  : 'bg-destructive/10 border-destructive/20 text-destructive'
-              }`}
-            >
-              {submitMessage.text}
-            </div>
-          )}
 
           <button
             type="submit"

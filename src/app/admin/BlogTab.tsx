@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, Suspense } from 'react'
+import dynamic from 'next/dynamic'
 import {
   BookText,
   Plus,
@@ -14,8 +15,6 @@ import {
   X,
   Loader2,
 } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import {
   PhotoDto,
   resolveAssetUrl,
@@ -29,6 +28,20 @@ import {
 } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
+import type { MilkdownEditorHandle } from '@/components/admin/MilkdownEditor'
+
+// Dynamically import MilkdownEditor to avoid SSR issues
+const MilkdownEditor = dynamic(
+  () => import('@/components/admin/MilkdownEditor'),
+  { 
+    ssr: false,
+    loading: () => (
+      <div className="flex-1 flex items-center justify-center border border-border bg-card/30">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+)
 
 interface BlogTabProps {
   photos: PhotoDto[]
@@ -53,9 +66,9 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
   const [loading, setLoading] = useState(true)
   const [currentBlog, setCurrentBlog] = useState<BlogFormData | null>(null)
   const [editMode, setEditMode] = useState<'list' | 'editor'>('list')
-  const [previewActive, setPreviewActive] = useState(false)
   const [isInsertingPhoto, setIsInsertingPhoto] = useState(false)
   const [saving, setSaving] = useState(false)
+  const editorRef = useRef<MilkdownEditorHandle>(null)
 
   const handleUnauthorized = () => {
     logout()
@@ -93,7 +106,6 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
       isPublished: false,
     })
     setEditMode('editor')
-    setPreviewActive(false)
   }
 
   const handleEditBlog = (blog: BlogDto) => {
@@ -106,7 +118,6 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
       isPublished: blog.isPublished,
     })
     setEditMode('editor')
-    setPreviewActive(false)
   }
 
   const handleDeleteBlog = async (id: string) => {
@@ -185,6 +196,12 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
     }
     setIsInsertingPhoto(false)
     notify(t('admin.notify_photo_inserted'), 'info')
+  }
+
+  const handleContentChange = (content: string) => {
+    if (currentBlog) {
+      setCurrentBlog({ ...currentBlog, content })
+    }
   }
 
   const resolvedCdnDomain = settings?.cdn_domain?.trim() || undefined
@@ -290,28 +307,6 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
               <ChevronLeft className="w-4 h-4" /> {t('admin.back_list')}
             </button>
             <div className="flex items-center gap-4">
-              <div className="flex bg-muted p-1 border border-border">
-                <button
-                  onClick={() => setPreviewActive(false)}
-                  className={`p-1.5 transition-all text-[10px] font-black uppercase px-3 ${
-                    !previewActive
-                      ? 'bg-background text-primary'
-                      : 'text-muted-foreground'
-                  }`}
-                >
-                  {t('ui.edit')}
-                </button>
-                <button
-                  onClick={() => setPreviewActive(true)}
-                  className={`p-1.5 transition-all text-[10px] font-black uppercase px-3 ${
-                    previewActive
-                      ? 'bg-background text-primary'
-                      : 'text-muted-foreground'
-                  }`}
-                >
-                  {t('admin.preview')}
-                </button>
-              </div>
               <label className="flex items-center gap-2 text-xs">
                 <input
                   type="checkbox"
@@ -341,77 +336,64 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
             </div>
           </div>
           <div className="flex-1 flex flex-col gap-4 overflow-hidden relative">
-            {previewActive ? (
-              <div className="flex-1 overflow-y-auto custom-scrollbar border border-border bg-background p-12 prose prose-invert max-w-none prose-gold prose-serif">
-                <h1 className="font-serif text-5xl mb-12 border-b border-border pb-6">
-                  {currentBlog?.title || t('admin.untitled')}
-                </h1>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {currentBlog?.content || ''}
-                </ReactMarkdown>
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+            <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+              <input
+                type="text"
+                value={currentBlog?.title || ''}
+                onChange={(e) =>
+                  setCurrentBlog((prev) => ({
+                    ...prev!,
+                    title: e.target.value,
+                  }))
+                }
+                placeholder={t('blog.title_placeholder')}
+                className="w-full p-6 bg-transparent border border-border focus:border-primary outline-none text-2xl font-serif rounded-none"
+              />
+              <div className="flex gap-4">
                 <input
                   type="text"
-                  value={currentBlog?.title || ''}
+                  value={currentBlog?.category || ''}
                   onChange={(e) =>
                     setCurrentBlog((prev) => ({
                       ...prev!,
-                      title: e.target.value,
+                      category: e.target.value,
                     }))
                   }
-                  placeholder={t('blog.title_placeholder')}
-                  className="w-full p-6 bg-transparent border border-border focus:border-primary outline-none text-2xl font-serif rounded-none"
+                  placeholder={t('ui.category_filter')}
+                  className="flex-1 p-3 bg-transparent border border-border focus:border-primary outline-none text-sm rounded-none"
                 />
-                <div className="flex gap-4">
-                  <input
-                    type="text"
-                    value={currentBlog?.category || ''}
-                    onChange={(e) =>
-                      setCurrentBlog((prev) => ({
-                        ...prev!,
-                        category: e.target.value,
-                      }))
-                    }
-                    placeholder={t('ui.category_filter')}
-                    className="flex-1 p-3 bg-transparent border border-border focus:border-primary outline-none text-sm rounded-none"
-                  />
-                  <input
-                    type="text"
-                    value={currentBlog?.tags || ''}
-                    onChange={(e) =>
-                      setCurrentBlog((prev) => ({
-                        ...prev!,
-                        tags: e.target.value,
-                      }))
-                    }
-                    placeholder="Tags"
-                    className="flex-1 p-3 bg-transparent border border-border focus:border-primary outline-none text-sm rounded-none"
-                  />
-                </div>
-                <div className="flex-1 relative border border-border bg-card/30">
-                  <textarea
-                    value={currentBlog?.content || ''}
-                    onChange={(e) =>
-                      setCurrentBlog((prev) => ({
-                        ...prev!,
-                        content: e.target.value,
-                      }))
-                    }
-                    placeholder={t('ui.markdown_placeholder')}
-                    className="w-full h-full p-8 bg-transparent outline-none resize-none font-mono text-sm leading-relaxed custom-scrollbar"
-                  />
-                  <button
-                    onClick={() => setIsInsertingPhoto(true)}
-                    className="absolute bottom-6 right-6 p-4 bg-background border border-border hover:border-primary text-primary transition-all shadow-2xl z-10"
-                    title={t('blog.insert_photo')}
-                  >
-                    <ImageIcon className="w-6 h-6" />
-                  </button>
-                </div>
+                <input
+                  type="text"
+                  value={currentBlog?.tags || ''}
+                  onChange={(e) =>
+                    setCurrentBlog((prev) => ({
+                      ...prev!,
+                      tags: e.target.value,
+                    }))
+                  }
+                  placeholder="Tags"
+                  className="flex-1 p-3 bg-transparent border border-border focus:border-primary outline-none text-sm rounded-none"
+                />
               </div>
-            )}
+              <div className="flex-1 relative border border-border bg-card/30 overflow-hidden">
+                {currentBlog && (
+                  <MilkdownEditor
+                    key={currentBlog.id || 'new'}
+                    ref={editorRef}
+                    value={currentBlog.content}
+                    onChange={handleContentChange}
+                    placeholder={t('ui.markdown_placeholder')}
+                  />
+                )}
+                <button
+                  onClick={() => setIsInsertingPhoto(true)}
+                  className="absolute bottom-6 right-6 p-4 bg-background border border-border hover:border-primary text-primary transition-all shadow-2xl z-10"
+                  title={t('blog.insert_photo')}
+                >
+                  <ImageIcon className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import {
   BookOpen,
   Plus,
@@ -15,9 +16,8 @@ import {
   Image as ImageIcon,
   X,
   GripVertical,
+  Loader2,
 } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import {
   getAdminStories,
   createStory,
@@ -34,6 +34,20 @@ import {
 import { CustomInput } from '@/components/ui/CustomInput'
 import { useSettings } from '@/contexts/SettingsContext'
 import { PhotoSelectorModal } from '@/components/admin/PhotoSelectorModal'
+import type { MilkdownEditorHandle } from '@/components/admin/MilkdownEditor'
+
+// Dynamically import MilkdownEditor to avoid SSR issues
+const MilkdownEditor = dynamic(
+  () => import('@/components/admin/MilkdownEditor'),
+  { 
+    ssr: false,
+    loading: () => (
+      <div className="flex-1 flex items-center justify-center border border-border bg-card/30 rounded-lg">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+)
 
 interface StoriesTabProps {
   token: string | null
@@ -48,8 +62,8 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
   const [loading, setLoading] = useState(true)
   const [currentStory, setCurrentStory] = useState<StoryDto | null>(null)
   const [storyEditMode, setStoryEditMode] = useState<'list' | 'editor'>('list')
-  const [storyPreviewActive, setStoryPreviewActive] = useState(false)
   const [saving, setSaving] = useState(false)
+  const editorRef = useRef<MilkdownEditorHandle>(null)
   
   // Photo management
   const [allPhotos, setAllPhotos] = useState<PhotoDto[]>([])
@@ -70,7 +84,6 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
       if (storyToEdit) {
         setCurrentStory({ ...storyToEdit })
         setStoryEditMode('editor')
-        setStoryPreviewActive(false)
       }
     }
   }, [editStoryId, stories])
@@ -116,13 +129,11 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
       photos: [],
     })
     setStoryEditMode('editor')
-    setStoryPreviewActive(false)
   }
 
   function handleEditStory(story: StoryDto) {
     setCurrentStory({ ...story })
     setStoryEditMode('editor')
-    setStoryPreviewActive(false)
   }
 
   async function handleDeleteStory(id: string) {
@@ -364,6 +375,12 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
     }
   }
 
+  const handleContentChange = (content: string) => {
+    if (currentStory) {
+      setCurrentStory({ ...currentStory, content })
+    }
+  }
+
   // Get current photo IDs (for initial selection in modal)
   const currentPhotoIds = currentStory?.photos?.map(p => p.id) || []
 
@@ -528,7 +545,7 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
                 className="text-xl md:text-2xl font-serif p-4 md:p-6"
               />
               
-              {/* Publish Checkbox and Preview Toggle - Same Row */}
+              {/* Publish Checkbox and Character Count */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-2">
                 {/* Left: Publish Checkbox and Character Count */}
                 <div className="flex items-center gap-4">
@@ -552,56 +569,20 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
                     {currentStory?.content?.length || 0} {t('admin.characters')}
                   </span>
                 </div>
-                
-                {/* Right: Preview Toggle - aligned to the right */}
-                <div className="flex items-center sm:ml-auto">
-                  <div className="flex bg-muted p-1 border border-border rounded-md">
-                    <button
-                      onClick={() => setStoryPreviewActive(false)}
-                      className={`p-1.5 transition-all text-[10px] font-black uppercase px-3 rounded ${
-                        !storyPreviewActive
-                          ? 'bg-background text-primary shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      {t('ui.edit')}
-                    </button>
-                    <button
-                      onClick={() => setStoryPreviewActive(true)}
-                      className={`p-1.5 transition-all text-[10px] font-black uppercase px-3 rounded ${
-                        storyPreviewActive
-                          ? 'bg-background text-primary shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      {t('admin.preview')}
-                    </button>
-                  </div>
-                </div>
               </div>
               
-              {/* Content Area - Editor or Preview */}
-              {storyPreviewActive ? (
-                <div className="flex-1 overflow-y-auto custom-scrollbar border border-border bg-card/30 rounded-lg p-6 md:p-8 prose prose-invert max-w-none prose-gold prose-serif">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {currentStory?.content || ''}
-                  </ReactMarkdown>
-                </div>
-              ) : (
-                <div className="flex-1 relative border border-border bg-card/30 rounded-lg overflow-hidden">
-                  <textarea
-                    value={currentStory?.content || ''}
-                    onChange={(e) =>
-                      setCurrentStory((prev) => ({
-                        ...prev!,
-                        content: e.target.value,
-                      }))
-                    }
+              {/* Content Area - WYSIWYG Editor */}
+              <div className="flex-1 relative border border-border bg-card/30 rounded-lg overflow-hidden">
+                {currentStory && (
+                  <MilkdownEditor
+                    key={currentStory.id}
+                    ref={editorRef}
+                    value={currentStory.content}
+                    onChange={handleContentChange}
                     placeholder={t('ui.markdown_placeholder')}
-                    className="w-full h-full p-6 md:p-8 bg-transparent outline-none resize-none font-mono text-sm leading-relaxed custom-scrollbar"
                   />
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* Right: Photos Panel (30%) */}

@@ -121,6 +121,8 @@ export const dictionaries = {
       weekday_thu: '周四',
       weekday_fri: '周五',
       weekday_sat: '周六',
+      loadingMore: '加载更多...',
+      noMore: '已加载全部照片',
     },
     they: {
       title: '他们',
@@ -412,6 +414,7 @@ export const dictionaries = {
       friends_unfeature: '取消精选',
       friends_enable: '启用',
       friends_disable: '禁用',
+      photos_reordered: '照片顺序已更新',
     }
   },
   en: {
@@ -534,6 +537,8 @@ export const dictionaries = {
       weekday_thu: 'THU',
       weekday_fri: 'FRI',
       weekday_sat: 'SAT',
+      loadingMore: 'Loading more...',
+      noMore: 'All photos loaded',
     },
     they: {
       title: 'THEY',
@@ -825,6 +830,7 @@ export const dictionaries = {
       friends_unfeature: 'Unfeature',
       friends_enable: 'Enable',
       friends_disable: 'Disable',
+      photos_reordered: 'Photos reordered',
     }
   }
 }

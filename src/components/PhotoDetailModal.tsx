@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   X,
@@ -15,6 +15,7 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
+  Loader2,
 } from 'lucide-react'
 import { PhotoDto, resolveAssetUrl } from '@/lib/api'
 import { useSettings } from '@/contexts/SettingsContext'
@@ -32,6 +33,9 @@ interface PhotoDetailModalProps {
   onClose: () => void
   onPhotoChange?: (photo: PhotoDto) => void
   allPhotos?: PhotoDto[]
+  totalPhotos?: number // Total count of all photos (for display)
+  hasMore?: boolean // Whether there are more photos to load
+  onLoadMore?: () => Promise<void> // Callback to load more photos
 }
 
 export function PhotoDetailModal({
@@ -40,6 +44,9 @@ export function PhotoDetailModal({
   onClose,
   onPhotoChange,
   allPhotos = [],
+  totalPhotos,
+  hasMore = false,
+  onLoadMore,
 }: PhotoDetailModalProps) {
   const { settings } = useSettings()
   const { t, locale } = useLanguage()
@@ -47,12 +54,22 @@ export function PhotoDetailModal({
   const [activeTab, setActiveTab] = useState<TabType>('story')
   const [dominantColors, setDominantColors] = useState<string[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const pendingNextRef = useRef(false)
+  const prevPhotosLengthRef = useRef(allPhotos.length)
   
   const currentPhotoIndex = photo && allPhotos.length > 0
     ? allPhotos.findIndex(p => p.id === photo.id)
     : -1
   const hasPrevious = currentPhotoIndex > 0
-  const hasNext = currentPhotoIndex >= 0 && currentPhotoIndex < allPhotos.length - 1
+  // Can go next if there are more loaded photos OR if there are more to load
+  const hasNextLoaded = currentPhotoIndex >= 0 && currentPhotoIndex < allPhotos.length - 1
+  const canLoadMore = hasMore && onLoadMore
+  const hasNext = hasNextLoaded || canLoadMore
+  
+  // Display total: use totalPhotos if provided, otherwise use loaded count
+  const displayTotal = totalPhotos ?? allPhotos.length
+  const displayIndex = currentPhotoIndex >= 0 ? currentPhotoIndex + 1 : 0
 
   const handlePrevious = () => {
     if (hasPrevious && onPhotoChange) {
@@ -60,11 +77,36 @@ export function PhotoDetailModal({
     }
   }
 
-  const handleNext = () => {
-    if (hasNext && onPhotoChange) {
+  const handleNext = async () => {
+    if (!onPhotoChange) return
+    
+    if (hasNextLoaded) {
+      // Navigate to next loaded photo
       onPhotoChange(allPhotos[currentPhotoIndex + 1])
+    } else if (canLoadMore) {
+      // Mark that we want to go to next photo after loading
+      pendingNextRef.current = true
+      setIsLoadingMore(true)
+      try {
+        await onLoadMore()
+      } finally {
+        setIsLoadingMore(false)
+      }
     }
   }
+
+  // Effect to handle navigation after loading more photos
+  useEffect(() => {
+    if (pendingNextRef.current && allPhotos.length > prevPhotosLengthRef.current) {
+      // New photos were loaded, navigate to the next one
+      const nextIndex = prevPhotosLengthRef.current
+      if (nextIndex < allPhotos.length && onPhotoChange) {
+        onPhotoChange(allPhotos[nextIndex])
+      }
+      pendingNextRef.current = false
+    }
+    prevPhotosLengthRef.current = allPhotos.length
+  }, [allPhotos, onPhotoChange])
 
   useEffect(() => {
     if (!isOpen || allPhotos.length <= 1) return
@@ -146,7 +188,7 @@ export function PhotoDetailModal({
               </div>
 
               {/* Navigation Arrows */}
-              {allPhotos.length > 1 && (
+              {(allPhotos.length > 1 || hasMore) && (
                 <>
                   <button
                     onClick={handlePrevious}
@@ -157,10 +199,14 @@ export function PhotoDetailModal({
                   </button>
                   <button
                     onClick={handleNext}
-                    disabled={!hasNext}
+                    disabled={!hasNext || isLoadingMore}
                     className="absolute right-4 top-1/2 -translate-y-1/2 p-4 text-foreground/20 hover:text-foreground disabled:opacity-0 transition-all"
                   >
-                    <ChevronRight className="w-8 h-8 md:w-12 md:h-12" />
+                    {isLoadingMore ? (
+                      <Loader2 className="w-8 h-8 md:w-12 md:h-12 animate-spin" />
+                    ) : (
+                      <ChevronRight className="w-8 h-8 md:w-12 md:h-12" />
+                    )}
                   </button>
                 </>
               )}
@@ -186,7 +232,7 @@ export function PhotoDetailModal({
                     )}
                   </div>
                   <div className="font-mono text-xs opacity-60">
-                    {currentPhotoIndex + 1} / {allPhotos.length}
+                    {displayIndex} / {displayTotal}
                   </div>
                 </div>
               </div>

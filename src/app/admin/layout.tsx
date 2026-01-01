@@ -172,7 +172,8 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
     setPhotosError('')
     setPhotosLoading(true)
     try {
-      const data = await getPhotos()
+      // Use all: true to get all photos for admin management
+      const data = await getPhotos({ all: true })
       setPhotos(data)
     } catch (err) {
       if (err instanceof ApiUnauthorizedError) {
@@ -610,8 +611,10 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
             </div>
           </header>
 
-          <div className="p-8 flex-1 overflow-y-auto custom-scrollbar">
-            {children}
+          <div className="p-8 flex-1 overflow-hidden flex flex-col">
+            <div className="h-full overflow-hidden">
+              {children}
+            </div>
           </div>
         </main>
 

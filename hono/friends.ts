@@ -95,6 +95,36 @@ friends.post('/admin/friends', async (c) => {
   }
 })
 
+// Reorder friend links (admin) - MUST be before /:id route
+friends.patch('/admin/friends/reorder', async (c) => {
+  try {
+    const body = await c.req.json()
+    const { items } = body as { items: { id: string; sortOrder: number }[] }
+
+    if (!Array.isArray(items)) {
+      return c.json({ error: 'Invalid items array' }, 400)
+    }
+
+    // Update each item's sort order
+    await Promise.all(
+      items.map((item) =>
+        db.friendLink.update({
+          where: { id: item.id },
+          data: { sortOrder: item.sortOrder },
+        })
+      )
+    )
+
+    return c.json({
+      success: true,
+      message: 'Friend links reordered successfully',
+    })
+  } catch (error) {
+    console.error('Reorder friend links error:', error)
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+})
+
 // Update friend link (admin)
 friends.patch('/admin/friends/:id', async (c) => {
   try {
@@ -135,36 +165,6 @@ friends.delete('/admin/friends/:id', async (c) => {
     })
   } catch (error) {
     console.error('Delete friend link error:', error)
-    return c.json({ error: 'Internal server error' }, 500)
-  }
-})
-
-// Reorder friend links (admin)
-friends.patch('/admin/friends/reorder', async (c) => {
-  try {
-    const body = await c.req.json()
-    const { items } = body as { items: { id: string; sortOrder: number }[] }
-
-    if (!Array.isArray(items)) {
-      return c.json({ error: 'Invalid items array' }, 400)
-    }
-
-    // Update each item's sort order
-    await Promise.all(
-      items.map((item) =>
-        db.friendLink.update({
-          where: { id: item.id },
-          data: { sortOrder: item.sortOrder },
-        })
-      )
-    )
-
-    return c.json({
-      success: true,
-      message: 'Friend links reordered successfully',
-    })
-  } catch (error) {
-    console.error('Reorder friend links error:', error)
     return c.json({ error: 'Internal server error' }, 500)
   }
 })

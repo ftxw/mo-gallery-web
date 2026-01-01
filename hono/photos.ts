@@ -64,19 +64,51 @@ photos.get('/photos', async (c) => {
   try {
     const category = c.req.query('category')
     const limitStr = c.req.query('limit')
-    const limit = limitStr ? parseInt(limitStr) : undefined
-
+    const pageStr = c.req.query('page')
+    const pageSizeStr = c.req.query('pageSize')
+    const allStr = c.req.query('all') // If 'true', return all photos without pagination
+    
     const where =
       category && category !== '全部'
         ? { categories: { some: { name: category } } }
         : {}
 
-    const photosList = await db.photo.findMany({
-      where,
-      include: { categories: true },
-      take: limit,
-      orderBy: { createdAt: 'desc' },
-    })
+    // If 'all=true', return all photos without pagination (for admin use)
+    if (allStr === 'true') {
+      const photosList = await db.photo.findMany({
+        where,
+        include: { categories: true },
+        orderBy: { createdAt: 'desc' },
+      })
+
+      const data = photosList.map((p) => ({
+        ...p,
+        category: p.categories.map((c) => c.name).join(','),
+        dominantColors: p.dominantColors ? JSON.parse(p.dominantColors) : null,
+      }))
+
+      return c.json({
+        success: true,
+        data,
+      })
+    }
+
+    // Support both old limit-only mode and new pagination mode
+    const page = pageStr ? parseInt(pageStr) : 1
+    const pageSize = pageSizeStr ? parseInt(pageSizeStr) : (limitStr ? parseInt(limitStr) : 20)
+    const skip = (page - 1) * pageSize
+
+    // Get total count and photos in parallel
+    const [total, photosList] = await Promise.all([
+      db.photo.count({ where }),
+      db.photo.findMany({
+        where,
+        include: { categories: true },
+        skip,
+        take: pageSize,
+        orderBy: { createdAt: 'desc' },
+      })
+    ])
 
     const data = photosList.map((p) => ({
       ...p,
@@ -87,6 +119,13 @@ photos.get('/photos', async (c) => {
     return c.json({
       success: true,
       data,
+      meta: {
+        total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
+        hasMore: page * pageSize < total,
+      }
     })
   } catch (error) {
     console.error('Get photos error:', error)

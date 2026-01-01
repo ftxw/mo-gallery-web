@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { BookText, BookOpen } from 'lucide-react'
 import { PhotoDto, PublicSettingsDto } from '@/lib/api'
 import { BlogTab } from './BlogTab'
@@ -19,17 +19,10 @@ interface LogsTabProps {
 export function LogsTab({ token, photos, settings, t, notify, initialTab, editStoryId }: LogsTabProps) {
   const [activeSubTab, setActiveSubTab] = useState<'blog' | 'stories'>(initialTab || 'blog')
 
-  // Update tab when initialTab changes (e.g., from URL params)
-  useEffect(() => {
-    if (initialTab) {
-      setActiveSubTab(initialTab)
-    }
-  }, [initialTab])
-
   return (
-    <div className="space-y-8">
+    <div className="h-full flex flex-col">
       {/* Sub-tab Navigation */}
-      <div className="flex space-x-1 border-b border-border">
+      <div className="flex space-x-1 border-b border-border flex-shrink-0">
         <button
           onClick={() => setActiveSubTab('blog')}
           className={`flex items-center gap-2 px-6 py-4 text-xs font-bold uppercase tracking-[0.2em] border-b-2 transition-colors ${
@@ -55,7 +48,7 @@ export function LogsTab({ token, photos, settings, t, notify, initialTab, editSt
       </div>
 
       {/* Sub-tab Content */}
-      <div>
+      <div className="flex-1 overflow-hidden pt-6">
         {activeSubTab === 'blog' && (
           <BlogTab
             photos={photos}

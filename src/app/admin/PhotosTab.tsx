@@ -6,15 +6,15 @@ import {
   List as ListIcon,
   Plus,
   Trash2,
-  Globe,
+  RefreshCw,
   X,
   ImageIcon,
   Star,
   Search,
+  SlidersHorizontal,
+  ChevronDown,
 } from 'lucide-react'
 import { PhotoDto, resolveAssetUrl, PublicSettingsDto } from '@/lib/api'
-import { CustomSelect } from '@/components/ui/CustomSelect'
-import { CustomInput } from '@/components/ui/CustomInput'
 
 interface PhotosTabProps {
   photos: PhotoDto[]
@@ -34,6 +34,8 @@ interface PhotosTabProps {
   t: (key: string) => string
   settings: PublicSettingsDto | null
 }
+
+type SortOption = 'upload-desc' | 'upload-asc' | 'taken-desc' | 'taken-asc'
 
 export function PhotosTab({
   photos,
@@ -57,9 +59,19 @@ export function PhotosTab({
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [channelFilter, setChannelFilter] = useState('all')
   const [onlyFeatured, setOnlyFeatured] = useState(false)
-  const [sortBy, setSortBy] = useState<'upload-desc' | 'upload-asc' | 'taken-desc' | 'taken-asc'>('upload-desc')
+  const [sortBy, setSortBy] = useState<SortOption>('upload-desc')
+  const [showFilters, setShowFilters] = useState(false)
 
   const resolvedCdnDomain = settings?.cdn_domain?.trim() || undefined
+
+  // Count active filters
+  const activeFilterCount = useMemo(() => {
+    let count = 0
+    if (categoryFilter !== 'all') count++
+    if (channelFilter !== 'all') count++
+    if (onlyFeatured) count++
+    return count
+  }, [categoryFilter, channelFilter, onlyFeatured])
 
   const filteredPhotos = useMemo(() => {
     const filtered = photos.filter((p) => {
@@ -101,182 +113,316 @@ export function PhotosTab({
     })
   }, [photos, search, categoryFilter, channelFilter, onlyFeatured, sortBy])
 
+  const clearAllFilters = () => {
+    setCategoryFilter('all')
+    setChannelFilter('all')
+    setOnlyFeatured(false)
+    setSearch('')
+  }
+
+  const sortOptions: { value: SortOption; label: string }[] = [
+    { value: 'upload-desc', label: t('admin.sort_upload_desc') },
+    { value: 'upload-asc', label: t('admin.sort_upload_asc') },
+    { value: 'taken-desc', label: t('admin.sort_taken_desc') },
+    { value: 'taken-asc', label: t('admin.sort_taken_asc') },
+  ]
+
   return (
-    <div className="space-y-6">
-      {/* Integrated Toolbar */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-border pb-6">
-        {/* Left: Items info & Selection actions */}
-        <div className="flex items-center space-x-6 shrink-0">
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={filteredPhotos.length > 0 && selectedIds.size === filteredPhotos.length}
-              onChange={onSelectAll}
-              className="w-4 h-4 accent-primary cursor-pointer"
-            />
-            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">
-              {selectedIds.size > 0
-                ? `${selectedIds.size} Selected`
-                : `${filteredPhotos.length} Items`}
-            </span>
+    <div className="space-y-4">
+      {/* Main Toolbar */}
+      <div className="bg-muted/30 border border-border rounded-lg p-4">
+        {/* Top Row: Selection, Search, Actions */}
+        <div className="flex flex-col md:flex-row md:items-center gap-4">
+          {/* Left: Selection Info */}
+          <div className="flex items-center gap-3 shrink-0">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={filteredPhotos.length > 0 && selectedIds.size === filteredPhotos.length}
+                onChange={onSelectAll}
+                className="w-4 h-4 accent-primary cursor-pointer rounded"
+              />
+              <span className="text-sm font-medium text-foreground">
+                {selectedIds.size > 0 ? (
+                  <span className="text-primary">{selectedIds.size} {t('admin.selected') || 'selected'}</span>
+                ) : (
+                  <span className="text-muted-foreground">{filteredPhotos.length} {t('admin.photos')}</span>
+                )}
+              </span>
+            </label>
+            
+            {selectedIds.size > 0 && (
+              <>
+                <div className="h-5 w-px bg-border" />
+                <button
+                  onClick={() => onDelete()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{t('common.delete')}</span>
+                </button>
+              </>
+            )}
           </div>
-          {selectedIds.size > 0 && (
-            <div className="flex items-center gap-4">
-              <div className="h-4 w-[1px] bg-border"></div>
+
+          {/* Center: Search */}
+          <div className="flex-1 max-w-md">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder={t('common.search')}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full h-9 pl-9 pr-4 bg-background border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Actions */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Filter Toggle */}
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center gap-2 px-3 py-2 text-xs font-medium border rounded-md transition-all ${
+                showFilters || activeFilterCount > 0
+                  ? 'bg-primary/10 border-primary/30 text-primary'
+                  : 'bg-background border-border text-muted-foreground hover:text-foreground hover:border-foreground/30'
+              }`}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('ui.category_filter') || 'Filters'}</span>
+              {activeFilterCount > 0 && (
+                <span className="flex items-center justify-center w-5 h-5 bg-primary text-primary-foreground text-[10px] font-bold rounded-full">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* View Mode Toggle */}
+            <div className="flex bg-background border border-border rounded-md overflow-hidden">
               <button
-                onClick={() => onDelete()}
-                className="text-destructive hover:opacity-80 transition-opacity flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest"
+                onClick={() => onViewModeChange('grid')}
+                className={`p-2 transition-colors ${
+                  viewMode === 'grid'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+                title="Grid view"
               >
-                <Trash2 className="w-3.5 h-3.5" /> Delete
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => onViewModeChange('list')}
+                className={`p-2 transition-colors ${
+                  viewMode === 'list'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+                title="List view"
+              >
+                <ListIcon className="w-4 h-4" />
               </button>
             </div>
-          )}
+
+            {/* Refresh */}
+            <button
+              onClick={onRefresh}
+              className="p-2 bg-background border border-border rounded-md text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+              title={t('common.refresh')}
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+
+            {/* Add New */}
+            <button
+              onClick={onAdd}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider rounded-md hover:bg-primary/90 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('admin.add_new')}</span>
+            </button>
+          </div>
         </div>
 
-        {/* Right: Search, Filters, Actions */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 flex-1 lg:justify-end">
-          <CustomInput
-            variant="search"
-            icon={Search}
-            placeholder={t('common.search')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            containerClassName="w-full sm:w-64"
-          />
-
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Sort Selector */}
-            <CustomSelect
-              value={sortBy}
-              onChange={(value) => setSortBy(value as any)}
-              options={[
-                { value: 'upload-desc', label: t('admin.sort_upload_desc') },
-                { value: 'upload-asc', label: t('admin.sort_upload_asc') },
-                { value: 'taken-desc', label: t('admin.sort_taken_desc') },
-                { value: 'taken-asc', label: t('admin.sort_taken_asc') },
-              ]}
-            />
-
-            {/* Category Filter */}
-            <CustomSelect
-              value={categoryFilter}
-              onChange={setCategoryFilter}
-              options={[
-                { value: 'all', label: `${t('ui.category_filter')}: ${t('gallery.all')}` },
-                ...categories.filter(c => c !== 'all').map(cat => ({
-                  value: cat,
-                  label: cat,
-                })),
-              ]}
-            />
-
-            {/* Channel Filter */}
-            <CustomSelect
-              value={channelFilter}
-              onChange={setChannelFilter}
-              options={[
-                { value: 'all', label: `${t('ui.channel_filter')}: ${t('gallery.all')}` },
-                { value: 'local', label: 'Local' },
-                { value: 'r2', label: 'Cloudflare R2' },
-                { value: 'github', label: 'GitHub' },
-              ]}
-            />
-
-            {/* Featured Filter (Switch) */}
-            <div className="flex items-center gap-3 px-3 py-2 bg-muted/30 border border-border">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">
-                {t('admin.feat')}
-              </span>
-              <button
-                onClick={() => setOnlyFeatured(!onlyFeatured)}
-                className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
-                  onlyFeatured ? 'bg-primary' : 'bg-muted'
-                }`}
-              >
-                <span
-                  className={`pointer-events-none block h-3 w-3 rounded-full bg-background shadow-lg ring-0 transition-transform ${
-                    onlyFeatured ? 'translate-x-4' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-            </div>
-
-            <div className="h-6 w-[1px] bg-border mx-1 hidden md:block"></div>
-
-            <div className="flex items-center gap-2">
-              <div className="flex bg-muted p-1 border border-border">
-                <button
-                  onClick={() => onViewModeChange('grid')}
-                  className={`p-1.5 transition-all ${
-                    viewMode === 'grid'
-                      ? 'bg-background text-primary shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => onViewModeChange('list')}
-                  className={`p-1.5 transition-all ${
-                    viewMode === 'list'
-                      ? 'bg-background text-primary shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <ListIcon className="w-3.5 h-3.5" />
-                </button>
+        {/* Filter Row - Collapsible */}
+        {showFilters && (
+          <div className="mt-4 pt-4 border-t border-border">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Sort */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">Sort:</span>
+                <div className="relative">
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as SortOption)}
+                    className="appearance-none h-8 pl-3 pr-8 bg-background border border-border rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary cursor-pointer"
+                  >
+                    {sortOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                </div>
               </div>
 
-              <button
-                className="p-2 border border-border hover:text-primary hover:border-primary transition-colors text-muted-foreground"
-                onClick={onRefresh}
-                title={t('common.refresh')}
-              >
-                <Globe className="w-4 h-4" />
-              </button>
+              <div className="h-5 w-px bg-border hidden sm:block" />
 
-              <button
-                onClick={onAdd}
-                className="flex items-center px-4 py-2 bg-primary text-primary-foreground text-[10px] font-bold uppercase tracking-widest hover:opacity-90 transition-all ml-2"
-              >
-                <Plus className="w-3.5 h-3.5 mr-2" />
-                {t('admin.add_new')}
-              </button>
+              {/* Category Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">{t('ui.category_filter')}:</span>
+                <div className="relative">
+                  <select
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    className={`appearance-none h-8 pl-3 pr-8 border rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary cursor-pointer ${
+                      categoryFilter !== 'all' 
+                        ? 'bg-primary/10 border-primary/30 text-primary' 
+                        : 'bg-background border-border'
+                    }`}
+                  >
+                    <option value="all">{t('gallery.all')}</option>
+                    {categories.filter(c => c !== 'all' && c !== '全部').map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Storage Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">{t('ui.channel_filter')}:</span>
+                <div className="relative">
+                  <select
+                    value={channelFilter}
+                    onChange={(e) => setChannelFilter(e.target.value)}
+                    className={`appearance-none h-8 pl-3 pr-8 border rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary cursor-pointer ${
+                      channelFilter !== 'all' 
+                        ? 'bg-primary/10 border-primary/30 text-primary' 
+                        : 'bg-background border-border'
+                    }`}
+                  >
+                    <option value="all">{t('gallery.all')}</option>
+                    <option value="local">Local</option>
+                    <option value="r2">Cloudflare R2</option>
+                    <option value="github">GitHub</option>
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Featured Toggle */}
+              <label className={`flex items-center gap-2 px-3 py-1.5 border rounded-md cursor-pointer transition-colors ${
+                onlyFeatured 
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-600' 
+                  : 'bg-background border-border text-muted-foreground hover:text-foreground'
+              }`}>
+                <Star className={`w-3.5 h-3.5 ${onlyFeatured ? 'fill-current' : ''}`} />
+                <span className="text-xs font-medium">{t('admin.feat')}</span>
+                <input
+                  type="checkbox"
+                  checked={onlyFeatured}
+                  onChange={() => setOnlyFeatured(!onlyFeatured)}
+                  className="sr-only"
+                />
+              </label>
+
+              {/* Clear Filters */}
+              {activeFilterCount > 0 && (
+                <>
+                  <div className="h-5 w-px bg-border" />
+                  <button
+                    onClick={clearAllFilters}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Clear all</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
-        </div>
+        )}
+
+        {/* Active Filters Tags */}
+        {activeFilterCount > 0 && !showFilters && (
+          <div className="mt-3 pt-3 border-t border-border flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Active filters:</span>
+            {categoryFilter !== 'all' && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary text-xs rounded-md">
+                {categoryFilter}
+                <button onClick={() => setCategoryFilter('all')} className="hover:text-primary/70">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {channelFilter !== 'all' && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary text-xs rounded-md">
+                {channelFilter}
+                <button onClick={() => setChannelFilter('all')} className="hover:text-primary/70">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {onlyFeatured && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-500/10 text-amber-600 text-xs rounded-md">
+                <Star className="w-3 h-3 fill-current" />
+                Featured
+                <button onClick={() => setOnlyFeatured(false)} className="hover:text-amber-500/70">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            <button
+              onClick={clearAllFilters}
+              className="text-xs text-muted-foreground hover:text-foreground underline"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
       </div>
 
       {error && (
-        <div className="p-4 border border-destructive text-destructive text-xs tracking-widest uppercase flex items-center space-x-2">
-          <X className="w-4 h-4" />
+        <div className="p-4 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm flex items-center gap-2">
+          <X className="w-4 h-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
+      {/* Photo Grid/List */}
       <div className="overflow-y-auto custom-scrollbar">
         {loading ? (
-          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {[...Array(12)].map((_, i) => (
-              <div key={i} className="aspect-[4/5] bg-muted animate-pulse" />
+              <div key={i} className="aspect-[4/5] bg-muted animate-pulse rounded-lg" />
             ))}
           </div>
         ) : (
           <div
             className={
               viewMode === 'grid'
-                ? 'grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-4'
-                : 'flex flex-col border border-border'
+                ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4'
+                : 'flex flex-col border border-border rounded-lg overflow-hidden'
             }
           >
             {filteredPhotos.map((photo) =>
               viewMode === 'grid' ? (
                 <div
                   key={photo.id}
-                  className={`group relative cursor-pointer bg-muted border overflow-hidden ${
+                  className={`group relative cursor-pointer bg-muted rounded-lg overflow-hidden border-2 transition-all ${
                     selectedIds.has(photo.id)
-                      ? 'border-primary ring-1 ring-primary'
-                      : 'border-transparent'
+                      ? 'border-primary ring-2 ring-primary/20'
+                      : 'border-transparent hover:border-border'
                   }`}
                   onClick={() => onPreview(photo)}
                 >
@@ -287,80 +433,68 @@ export function PhotosTab({
                         resolvedCdnDomain
                       )}
                       alt={photo.title}
-                      className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                      className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
                       loading="lazy"
                     />
                   </div>
 
-                  {/* Checkbox - Always visible on mobile, hover on desktop */}
+                  {/* Checkbox */}
                   <div
                     className="absolute top-2 left-2 z-10"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(photo.id)}
-                      onChange={() => onSelect(photo.id)}
-                      className="w-4 h-4 accent-primary cursor-pointer border-white shadow-lg"
-                    />
+                    <label className="flex items-center justify-center w-5 h-5 bg-black/50 backdrop-blur-sm rounded cursor-pointer hover:bg-black/70 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(photo.id)}
+                        onChange={() => onSelect(photo.id)}
+                        className="w-3.5 h-3.5 accent-primary cursor-pointer"
+                      />
+                    </label>
                   </div>
 
-                  {/* Featured Badge - Always visible if featured */}
+                  {/* Featured Badge */}
                   {photo.isFeatured && (
-                    <div className="absolute top-2 left-8 px-1.5 py-0.5 bg-amber-500 text-white text-[8px] font-black uppercase tracking-widest z-10 shadow-lg">
-                      {t('admin.feat')}
+                    <div className="absolute top-2 right-2 p-1.5 bg-amber-500 text-white rounded z-10 shadow-lg">
+                      <Star className="w-3 h-3 fill-current" />
                     </div>
                   )}
 
-                  {/* Gradient Overlay - Desktop only */}
-                  <div className="hidden md:block absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+                  {/* Hover Overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
 
-                  {/* Action Buttons - Always visible on mobile, hover on desktop */}
-                  <div className="absolute top-2 right-2 flex flex-col gap-2 z-20 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onToggleFeatured(photo)
-                      }}
-                      className={`p-2 bg-black/70 backdrop-blur-sm text-white hover:text-amber-500 transition-colors shadow-lg ${
-                        photo.isFeatured ? 'text-amber-500' : ''
-                      }`}
-                      title={photo.isFeatured ? 'Remove from featured' : 'Add to featured'}
-                    >
-                      <Star
-                        className={`w-4 h-4 ${
-                          photo.isFeatured ? 'fill-current' : ''
-                        }`}
-                      />
-                    </button>
+                  {/* Action Buttons */}
+                  <div className="absolute top-2 right-2 flex flex-col gap-1.5 z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    {!photo.isFeatured && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onToggleFeatured(photo)
+                        }}
+                        className="p-1.5 bg-black/60 backdrop-blur-sm text-white hover:text-amber-400 rounded transition-colors"
+                        title="Add to featured"
+                      >
+                        <Star className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
                         onDelete(photo.id)
                       }}
-                      className="p-2 bg-black/70 backdrop-blur-sm text-white hover:text-destructive transition-colors shadow-lg"
+                      className="p-1.5 bg-black/60 backdrop-blur-sm text-white hover:text-destructive rounded transition-colors"
                       title="Delete photo"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
 
-                  {/* Bottom Info - Desktop hover only */}
-                  <div className="hidden md:block absolute bottom-0 left-0 w-full p-4 opacity-0 group-hover:opacity-100 transition-all duration-500 translate-y-4 group-hover:translate-y-0 pointer-events-none z-10">
-                    <p className="text-[9px] font-black text-primary uppercase tracking-[0.3em] mb-1">
+                  {/* Bottom Info */}
+                  <div className="absolute bottom-0 left-0 right-0 p-3 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0 pointer-events-none z-10">
+                    <p className="text-[10px] font-bold text-primary uppercase tracking-wider mb-0.5 truncate">
                       {photo.category.split(',')[0]}
                     </p>
-                    <h3 className="text-sm font-serif text-white leading-tight truncate">
-                      {photo.title}
-                    </h3>
-                  </div>
-
-                  {/* Mobile Info - Always visible on mobile */}
-                  <div className="md:hidden absolute bottom-0 left-0 w-full p-2 bg-gradient-to-t from-black/90 to-transparent pointer-events-none z-10">
-                    <p className="text-[8px] font-black text-primary uppercase tracking-[0.2em] mb-0.5 truncate">
-                      {photo.category.split(',')[0]}
-                    </p>
-                    <h3 className="text-xs font-serif text-white leading-tight truncate">
+                    <h3 className="text-sm font-medium text-white leading-tight truncate">
                       {photo.title}
                     </h3>
                   </div>
@@ -368,7 +502,7 @@ export function PhotosTab({
               ) : (
                 <div
                   key={photo.id}
-                  className={`flex items-center gap-4 p-3 border-b border-border last:border-0 hover:bg-muted/30 transition-colors cursor-pointer ${
+                  className={`flex items-center gap-4 p-3 border-b border-border last:border-0 hover:bg-muted/50 transition-colors cursor-pointer ${
                     selectedIds.has(photo.id) ? 'bg-primary/5' : ''
                   }`}
                   onClick={() => onPreview(photo)}
@@ -381,10 +515,10 @@ export function PhotosTab({
                       type="checkbox"
                       checked={selectedIds.has(photo.id)}
                       onChange={() => onSelect(photo.id)}
-                      className="w-4 h-4 accent-primary cursor-pointer"
+                      className="w-4 h-4 accent-primary cursor-pointer rounded"
                     />
                   </div>
-                  <div className="w-12 h-12 flex-shrink-0 bg-muted border border-border overflow-hidden">
+                  <div className="w-12 h-12 flex-shrink-0 bg-muted rounded overflow-hidden">
                     <img
                       src={resolveAssetUrl(
                         photo.thumbnailUrl || photo.url,
@@ -395,40 +529,35 @@ export function PhotosTab({
                     />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold uppercase tracking-widest truncate text-foreground">
+                    <p className="text-sm font-medium truncate text-foreground">
                       {photo.title}
                     </p>
-                    <p className="text-[10px] font-mono text-muted-foreground uppercase">
+                    <p className="text-xs text-muted-foreground truncate">
                       {photo.category}
                     </p>
                   </div>
-                  <div className="hidden md:block text-[10px] font-mono text-muted-foreground w-32">
-                    {photo.width} × {photo.height}
+                  <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground">
+                    <span className="font-mono">{photo.width} × {photo.height}</span>
+                    <span className="uppercase">{photo.storageProvider}</span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
                         onToggleFeatured(photo)
                       }}
-                      className={`p-2 hover:bg-muted transition-colors ${
-                        photo.isFeatured
-                          ? 'text-amber-500'
-                          : 'text-muted-foreground'
+                      className={`p-2 rounded hover:bg-muted transition-colors ${
+                        photo.isFeatured ? 'text-amber-500' : 'text-muted-foreground hover:text-amber-500'
                       }`}
                     >
-                      <Star
-                        className={`w-4 h-4 ${
-                          photo.isFeatured ? 'fill-current' : ''
-                        }`}
-                      />
+                      <Star className={`w-4 h-4 ${photo.isFeatured ? 'fill-current' : ''}`} />
                     </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
                         onDelete(photo.id)
                       }}
-                      className="p-2 text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
+                      className="p-2 text-muted-foreground hover:text-destructive rounded hover:bg-muted transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -438,10 +567,18 @@ export function PhotosTab({
             )}
             {filteredPhotos.length === 0 && (
               <div className="col-span-full py-24 flex flex-col items-center justify-center text-muted-foreground">
-                <ImageIcon className="w-12 h-12 mb-4 opacity-10" />
-                <p className="text-xs font-bold uppercase tracking-widest">
+                <ImageIcon className="w-16 h-16 mb-4 opacity-10" />
+                <p className="text-sm font-medium mb-2">
                   {t('admin.no_photos')}
                 </p>
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={clearAllFilters}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Clear filters to see all photos
+                  </button>
+                )}
               </div>
             )}
           </div>

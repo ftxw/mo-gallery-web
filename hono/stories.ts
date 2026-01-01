@@ -26,6 +26,10 @@ const AddPhotosSchema = z.object({
   photoIds: z.array(z.string().uuid()).min(1),
 })
 
+const ReorderPhotosSchema = z.object({
+  photoIds: z.array(z.string().uuid()).min(1),
+})
+
 // Public endpoints
 stories.get('/stories', async (c) => {
   try {
@@ -434,6 +438,59 @@ stories.delete('/admin/stories/:storyId/photos/:photoId', async (c) => {
     })
   } catch (error) {
     console.error('Remove photo from story error:', error)
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+})
+
+// Reorder photos in story
+stories.patch('/admin/stories/:id/photos/reorder', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const body = await c.req.json()
+    const validated = ReorderPhotosSchema.parse(body)
+
+    // First, disconnect all photos from the story
+    await db.story.update({
+      where: { id },
+      data: {
+        photos: {
+          set: [], // Disconnect all photos
+        },
+      },
+    })
+
+    // Then, reconnect photos in the new order
+    const story = await db.story.update({
+      where: { id },
+      data: {
+        photos: {
+          connect: validated.photoIds.map((photoId) => ({ id: photoId })),
+        },
+      },
+      include: {
+        photos: {
+          include: { categories: true },
+        },
+      },
+    })
+
+    const data = {
+      ...story,
+      photos: story.photos.map((p) => ({
+        ...p,
+        category: p.categories.map((c) => c.name).join(','),
+      })),
+    }
+
+    return c.json({
+      success: true,
+      data,
+    })
+  } catch (error) {
+    console.error('Reorder story photos error:', error)
+    if (error instanceof z.ZodError) {
+      return c.json({ error: 'Validation error', details: error.issues }, 400)
+    }
     return c.json({ error: 'Internal server error' }, 500)
   }
 })

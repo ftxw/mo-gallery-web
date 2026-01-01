@@ -25,7 +25,7 @@ export class ApiUnauthorizedError extends Error {
 }
 
 type ApiEnvelope<T> =
-  | { success: true; data: T }
+  | { success: true; data: T; meta?: unknown }
   | { success: true; token: string }
   | { success: true }
   | { success: false; message?: string; error?: string }
@@ -91,6 +91,19 @@ async function apiRequestData<T>(
     throw new Error('Unexpected API response (missing data)')
   }
   return envelope.data as T
+}
+
+async function apiRequestWithMeta<T, M>(
+  path: string,
+  init: RequestInit = {},
+  token?: string | null,
+): Promise<{ data: T; meta: M }> {
+  const envelope = await apiRequest(path, init, token)
+  if (!('data' in envelope)) {
+    throw new Error('Unexpected API response (missing data)')
+  }
+  const meta = 'meta' in envelope ? envelope.meta as M : {} as M
+  return { data: envelope.data as T, meta }
 }
 
 function buildQuery(params: Record<string, string | number | undefined | null>): string {
@@ -304,10 +317,47 @@ export async function getCategories(): Promise<string[]> {
   return apiRequestData<string[]>('/api/categories')
 }
 
-export async function getPhotos(params?: { category?: string; limit?: number }): Promise<PhotoDto[]> {
+// Photo pagination meta
+export interface PhotoPaginationMeta {
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+  hasMore: boolean
+}
+
+// Get photos with pagination support
+export async function getPhotos(params?: {
+  category?: string
+  limit?: number
+  page?: number
+  pageSize?: number
+  all?: boolean // If true, return all photos without pagination (for admin use)
+}): Promise<PhotoDto[]> {
   const category = params?.category && params.category !== '全部' ? params.category : undefined
-  const query = buildQuery({ category, limit: params?.limit })
+  const query = buildQuery({
+    category,
+    limit: params?.limit,
+    page: params?.page,
+    pageSize: params?.pageSize,
+    all: params?.all ? 'true' : undefined
+  })
   return apiRequestData<PhotoDto[]>(`/api/photos${query}`)
+}
+
+// Get photos with pagination metadata (for infinite scroll)
+export async function getPhotosWithMeta(params?: { 
+  category?: string
+  page?: number
+  pageSize?: number 
+}): Promise<{ data: PhotoDto[]; meta: PhotoPaginationMeta }> {
+  const category = params?.category && params.category !== '全部' ? params.category : undefined
+  const query = buildQuery({ 
+    category, 
+    page: params?.page,
+    pageSize: params?.pageSize
+  })
+  return apiRequestWithMeta<PhotoDto[], PhotoPaginationMeta>(`/api/photos${query}`)
 }
 
 export async function getFeaturedPhotos(): Promise<PhotoDto[]> {
@@ -652,6 +702,21 @@ export async function removePhotoFromStory(
   return apiRequestData<StoryDto>(
     `/api/admin/stories/${encodeURIComponent(storyId)}/photos/${encodeURIComponent(photoId)}`,
     { method: 'DELETE' },
+    token
+  )
+}
+
+export async function reorderStoryPhotos(
+  token: string,
+  storyId: string,
+  photoIds: string[]
+): Promise<StoryDto> {
+  return apiRequestData<StoryDto>(
+    `/api/admin/stories/${encodeURIComponent(storyId)}/photos/reorder`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ photoIds }),
+    },
     token
   )
 }

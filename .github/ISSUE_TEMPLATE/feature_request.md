@@ -1,20 +1,41 @@
 ---
-name: Feature request
-about: Suggest an idea for this project
-title: ''
-labels: ''
+name: ✨ 功能请求
+about: 提出一个新功能或改进建议
+title: '[Feature] '
+labels: enhancement
 assignees: ''
-
 ---
 
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+## 💡 功能描述
 
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
+请清晰简洁地描述你希望添加的功能。
 
-**Describe alternatives you've considered**
-A clear and concise description of any alternative solutions or features you've considered.
+## 🎯 使用场景
 
-**Additional context**
-Add any other context or screenshots about the feature request here.
+描述这个功能会在什么场景下使用，解决什么问题。
+
+例如：当我想要 [...] 的时候，目前需要 [...]，这让我感到不便。
+
+## 📝 建议方案
+
+请描述你期望的解决方案或实现方式。
+
+## 🔄 替代方案
+
+你是否考虑过其他替代方案？请描述。
+
+## 📸 参考示例
+
+如果有的话，请提供参考截图、链接或其他项目的类似功能。
+
+## ✅ 验收标准
+
+这个功能完成后，应该满足哪些条件？
+
+- [ ] 条件 1
+- [ ] 条件 2
+- [ ] 条件 3
+
+## 📎 附加信息
+
+请添加任何其他相关信息或上下文。

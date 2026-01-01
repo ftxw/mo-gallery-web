@@ -1,38 +1,55 @@
 ---
-name: Bug report
-about: Create a report to help us improve
-title: ''
-labels: ''
+name: 🐛 Bug 报告
+about: 报告一个问题帮助我们改进
+title: '[Bug] '
+labels: bug
 assignees: ''
-
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+## 🐛 问题描述
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+请清晰简洁地描述遇到的问题。
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+## 📋 复现步骤
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+1. 进入 '...'
+2. 点击 '...'
+3. 滚动到 '...'
+4. 出现错误
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+## ✅ 期望行为
 
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
+请描述你期望发生的行为。
 
-**Additional context**
-Add any other context about the problem here.
+## ❌ 实际行为
+
+请描述实际发生的行为。
+
+## 📸 截图
+
+如果可以，请添加截图来帮助说明问题。
+
+## 🖥️ 环境信息
+
+### 桌面端
+- 操作系统：[例如 Windows 11, macOS 14]
+- 浏览器：[例如 Chrome, Firefox, Safari]
+- 浏览器版本：[例如 120]
+
+### 移动端（如适用）
+- 设备：[例如 iPhone 15, Pixel 8]
+- 操作系统：[例如 iOS 17, Android 14]
+- 浏览器：[例如 Safari, Chrome]
+
+## 📝 部署信息
+
+- 部署方式：[例如 Docker, Vercel, 本地开发]
+- 存储后端：[例如 本地, GitHub, R2]
+- 数据库：[例如 SQLite, PostgreSQL]
+
+## 📎 附加信息
+
+请添加任何其他相关信息，例如：
+- 错误日志
+- 控制台输出
+- 相关配置

@@ -1,4 +1,4 @@
-FROM node:20-alpine AS base
+FROM docker.m.daocloud.io/library/node:20-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -6,7 +6,11 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml* ./
-RUN npm install -g corepack@latest && corepack enable pnpm && pnpm i --frozen-lockfile
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm install -g corepack@latest && \
+    corepack enable pnpm && \
+    pnpm config set registry https://registry.npmmirror.com && \
+    pnpm i --frozen-lockfile
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -14,8 +18,8 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Generate Prisma client
-RUN npx prisma generate
+# Generate Prisma client (with retry for network issues)
+RUN npx prisma generate || npx prisma generate || npx prisma generate
 
 # Build the application
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -33,7 +37,11 @@ RUN adduser --system --uid 1001 nextjs
 
 # Install runtime dependencies
 RUN apk add --no-cache libc6-compat
-RUN npm install -g corepack@latest && corepack enable pnpm && pnpm add prisma@6.4.1 @prisma/client@6.4.1 tsx
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm install -g corepack@latest && \
+    corepack enable pnpm && \
+    pnpm config set registry https://registry.npmmirror.com && \
+    pnpm add prisma@6.4.1 @prisma/client@6.4.1 tsx
 
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
@@ -46,9 +54,9 @@ RUN chown nextjs:nodejs .next
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Copy startup script
+# Copy startup script and fix line endings (Windows CRLF -> Unix LF)
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
-RUN chmod +x docker-entrypoint.sh
+RUN sed -i 's/\r$//' docker-entrypoint.sh && chmod +x docker-entrypoint.sh
 
 USER nextjs
 

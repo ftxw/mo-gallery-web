@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAdmin } from '../layout'
-import { UploadTab } from '@/components/admin/UploadTab'
+import { UploadTab } from '@/app/admin/upload/UploadTab'
 
 type UploadMode = 'photos' | 'story'
 

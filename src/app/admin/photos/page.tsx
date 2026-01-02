@@ -1,7 +1,7 @@
 'use client'
 
 import { useAdmin } from '../layout'
-import { PhotosTab } from '@/components/admin/PhotosTab'
+import { PhotosTab } from '@/app/admin/photos/PhotosTab'
 
 export default function PhotosPage() {
   const {

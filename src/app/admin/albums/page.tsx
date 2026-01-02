@@ -1,7 +1,7 @@
 'use client'
 
 import { useAdmin } from '../layout'
-import { AlbumsTab } from '@/components/admin/AlbumsTab'
+import { AlbumsTab } from '@/app/admin/albums/AlbumsTab'
 import { useSettings } from '@/contexts/SettingsContext'
 
 export default function AlbumsPage() {

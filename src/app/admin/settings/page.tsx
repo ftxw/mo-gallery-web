@@ -1,7 +1,7 @@
 'use client'
 
 import { useAdmin } from '../layout'
-import { SettingsTab } from '../SettingsTab'
+import { SettingsTab } from '@/components/admin/SettingsTab'
 
 export default function SettingsPage() {
   const {

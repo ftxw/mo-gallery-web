@@ -1,4 +1,3 @@
-
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
@@ -33,26 +32,32 @@ import {
   type AlbumDto,
   type PhotoDto,
   ApiUnauthorizedError,
+  resolveAssetUrl,
 } from '@/lib/api'
 import { CustomInput } from '@/components/ui/CustomInput'
-import { useSettings } from '@/contexts/SettingsContext'
-import { resolveAssetUrl } from '@/lib/api'
-
-interface AlbumsTabProps {
-  token: string | null
-  photos: PhotoDto[]
-  t: (key: string) => string
-  notify: (message: string, type?: 'success' | 'error' | 'info') => void
-  onUnauthorized: () => void
-}
 
 type ViewMode = 'grid' | 'list'
 type FilterStatus = 'all' | 'published' | 'draft'
 
-export function AlbumsTab({ token, photos, t, notify, onUnauthorized }: AlbumsTabProps) {
-  const { settings } = useSettings()
-  const cdnDomain = settings?.cdn_domain || ''
+interface AlbumsTabProps {
+  token: string | null
+  photos: PhotoDto[]
+  cdnDomain: string
+  t: (key: string) => string
+  notify: (message: string, type?: 'success' | 'error' | 'info') => void
+  onUnauthorized: () => void
+  onPreview: (photo: PhotoDto) => void
+}
 
+export function AlbumsTab({
+  token,
+  photos,
+  cdnDomain,
+  t,
+  notify,
+  onUnauthorized,
+  onPreview,
+}: AlbumsTabProps) {
   const [albums, setAlbums] = useState<AlbumDto[]>([])
   const [loading, setLoading] = useState(true)
   const [currentAlbum, setCurrentAlbum] = useState<AlbumDto | null>(null)
@@ -600,12 +605,16 @@ export function AlbumsTab({ token, photos, t, notify, onUnauthorized }: AlbumsTa
                 {currentAlbum.photos.map(photo => {
                   const isCover = currentAlbum.coverUrl === (photo.thumbnailUrl || photo.url)
                   return (
-                    <div key={photo.id} className="relative aspect-square group bg-muted overflow-hidden">
+                    <div
+                      key={photo.id}
+                      className="relative aspect-square group bg-muted overflow-hidden cursor-pointer"
+                      onClick={() => onPreview(photo)}
+                    >
                       <img src={resolveAssetUrl(photo.thumbnailUrl || photo.url, cdnDomain)} alt={photo.title} className="w-full h-full object-cover" />
                       {isCover && <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-primary text-primary-foreground text-[8px] font-medium">Cover</div>}
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1.5">
-                        {!isCover && <button onClick={() => handleSetCover(photo.id)} className="px-2 py-1 bg-white/20 hover:bg-white/30 text-white text-[9px] font-medium">Set Cover</button>}
-                        <button onClick={() => handleRemovePhoto(photo.id)} className="px-2 py-1 bg-red-500/80 hover:bg-red-500 text-white text-[9px] font-medium">Remove</button>
+                        {!isCover && <button onClick={(e) => { e.stopPropagation(); handleSetCover(photo.id) }} className="px-2 py-1 bg-white/20 hover:bg-white/30 text-white text-[9px] font-medium">Set Cover</button>}
+                        <button onClick={(e) => { e.stopPropagation(); handleRemovePhoto(photo.id) }} className="px-2 py-1 bg-red-500/80 hover:bg-red-500 text-white text-[9px] font-medium">Remove</button>
                       </div>
                     </div>
                   )

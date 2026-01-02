@@ -13,16 +13,19 @@ import {
   SlidersHorizontal,
   ChevronDown,
 } from 'lucide-react'
-import { PhotoDto, resolveAssetUrl, PublicSettingsDto, AlbumDto, getAlbums } from '@/lib/api'
+import { PhotoDto, resolveAssetUrl, AlbumDto, getAlbums, AdminSettingsDto } from '@/lib/api'
+
+type SortOption = 'upload-desc' | 'upload-asc' | 'taken-desc' | 'taken-asc'
+type ViewMode = 'grid' | 'list'
 
 interface PhotosTabProps {
   photos: PhotoDto[]
   categories: string[]
   loading: boolean
   error: string
-  viewMode: 'grid' | 'list'
+  viewMode: ViewMode
+  onViewModeChange: (mode: ViewMode) => void
   selectedIds: Set<string>
-  onViewModeChange: (mode: 'grid' | 'list') => void
   onSelect: (id: string) => void
   onSelectAll: () => void
   onDelete: (id?: string) => void
@@ -30,10 +33,8 @@ interface PhotosTabProps {
   onToggleFeatured: (photo: PhotoDto) => void
   onPreview: (photo: PhotoDto) => void
   t: (key: string) => string
-  settings: PublicSettingsDto | null
+  settings: AdminSettingsDto | null
 }
-
-type SortOption = 'upload-desc' | 'upload-asc' | 'taken-desc' | 'taken-asc'
 
 export function PhotosTab({
   photos,
@@ -41,8 +42,8 @@ export function PhotosTab({
   loading,
   error,
   viewMode,
-  selectedIds,
   onViewModeChange,
+  selectedIds,
   onSelect,
   onSelectAll,
   onDelete,

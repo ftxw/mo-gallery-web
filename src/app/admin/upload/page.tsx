@@ -3,9 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAdmin } from '../layout'
-import { UploadTab } from '../UploadTab'
-import { StoryUploadTab } from '../StoryUploadTab'
-import { Image as ImageIcon, BookOpen } from 'lucide-react'
+import { UploadTab } from '@/components/admin/UploadTab'
 
 type UploadMode = 'photos' | 'story'
 

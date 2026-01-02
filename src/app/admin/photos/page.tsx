@@ -1,23 +1,23 @@
 'use client'
 
 import { useAdmin } from '../layout'
-import { PhotosTab } from '../PhotosTab'
+import { PhotosTab } from '@/components/admin/PhotosTab'
 
 export default function PhotosPage() {
   const {
     photos,
     categories,
-    photosLoading,
-    photosError,
-    photosViewMode,
-    setPhotosViewMode,
-    selectedPhotoIds,
-    handleSelectPhotoToggle,
-    handleSelectAllPhotos,
-    handleDelete,
-    refreshPhotos,
-    handleToggleFeatured,
-    setSelectedPhoto,
+    photosLoading: loading,
+    photosError: error,
+    photosViewMode: viewMode,
+    setPhotosViewMode: onViewModeChange,
+    selectedPhotoIds: selectedIds,
+    handleSelectPhotoToggle: onSelect,
+    handleSelectAllPhotos: onSelectAll,
+    handleDelete: onDelete,
+    refreshPhotos: onRefresh,
+    handleToggleFeatured: onToggleFeatured,
+    setSelectedPhoto: onPreview,
     t,
     settings,
   } = useAdmin()
@@ -26,17 +26,17 @@ export default function PhotosPage() {
     <PhotosTab
       photos={photos}
       categories={categories}
-      loading={photosLoading}
-      error={photosError}
-      viewMode={photosViewMode}
-      selectedIds={selectedPhotoIds}
-      onViewModeChange={setPhotosViewMode}
-      onSelect={handleSelectPhotoToggle}
-      onSelectAll={handleSelectAllPhotos}
-      onDelete={handleDelete}
-      onRefresh={refreshPhotos}
-      onToggleFeatured={handleToggleFeatured}
-      onPreview={setSelectedPhoto}
+      loading={loading}
+      error={error}
+      viewMode={viewMode}
+      onViewModeChange={onViewModeChange}
+      selectedIds={selectedIds}
+      onSelect={onSelect}
+      onSelectAll={onSelectAll}
+      onDelete={onDelete}
+      onRefresh={onRefresh}
+      onToggleFeatured={onToggleFeatured}
+      onPreview={onPreview}
       t={t}
       settings={settings}
     />

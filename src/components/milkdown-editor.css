@@ -69,6 +69,20 @@
   color: hsl(var(--foreground));
 }
 
+/* Force text color in light mode - override Milkdown defaults */
+.milkdown-light .ProseMirror,
+.milkdown-light .ProseMirror p,
+.milkdown-light .ProseMirror h1,
+.milkdown-light .ProseMirror h2,
+.milkdown-light .ProseMirror h3,
+.milkdown-light .ProseMirror h4,
+.milkdown-light .ProseMirror h5,
+.milkdown-light .ProseMirror h6,
+.milkdown-light .ProseMirror li,
+.milkdown-light .ProseMirror span {
+  color: #1a1a1a !important;
+}
+
 /* Toolbar and menu styling for dark mode */
 .milkdown-dark .milkdown-toolbar,
 .milkdown-dark [data-milkdown-toolbar],

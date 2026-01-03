@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
-import { BookText, BookOpen, FileArchive, Clock, Trash2, Eye, X } from 'lucide-react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { BookText, BookOpen, FileArchive, Clock, Trash2, Eye, X, Image as ImageIcon } from 'lucide-react'
 import { PhotoDto, PublicSettingsDto } from '@/lib/api'
 import { BlogTab } from './BlogTab'
 import { StoriesTab } from './StoriesTab'
@@ -13,6 +13,11 @@ import {
   type BlogDraftData
 } from '@/lib/client-db'
 import { motion, AnimatePresence } from 'framer-motion'
+
+// Extended type with preview URLs for display
+interface StoryDraftWithPreviews extends Omit<StoryDraftData, 'files'> {
+  files: { id: string; file: File; preview: string }[]
+}
 
 interface LogsTabProps {
   token: string | null
@@ -27,11 +32,14 @@ interface LogsTabProps {
 export function LogsTab({ token, photos, settings, t, notify, initialTab, editStoryId }: LogsTabProps) {
   const [activeSubTab, setActiveSubTab] = useState<'blog' | 'stories' | 'drafts'>(initialTab || 'stories')
   
-  // Drafts state
-  const [storyDraft, setStoryDraft] = useState<StoryDraftData | null>(null)
+  // Drafts state - use extended type with preview URLs
+  const [storyDraft, setStoryDraft] = useState<StoryDraftWithPreviews | null>(null)
   const [blogDrafts, setBlogDrafts] = useState<BlogDraftData[]>([])
   const [loadingDrafts, setLoadingDrafts] = useState(false)
-  const [selectedDraft, setSelectedDraft] = useState<StoryDraftData | BlogDraftData | null>(null)
+  const [selectedDraft, setSelectedDraft] = useState<StoryDraftWithPreviews | BlogDraftData | null>(null)
+  
+  // Keep track of preview URLs for cleanup
+  const previewUrlsRef = useRef<string[]>([])
   
   // Load drafts when switching to drafts tab
   useEffect(() => {
@@ -40,11 +48,51 @@ export function LogsTab({ token, photos, settings, t, notify, initialTab, editSt
     }
   }, [activeSubTab])
 
+  // Cleanup preview URLs on unmount
+  useEffect(() => {
+    return () => {
+      previewUrlsRef.current.forEach(url => URL.revokeObjectURL(url))
+    }
+  }, [])
+
   async function loadDrafts() {
     setLoadingDrafts(true)
+    
+    // Cleanup old preview URLs
+    previewUrlsRef.current.forEach(url => URL.revokeObjectURL(url))
+    previewUrlsRef.current = []
+    
     try {
-      const { storyDraft, blogDrafts } = await getAllDraftsFromDB()
-      setStoryDraft(storyDraft)
+      const { storyDraft: rawStoryDraft, blogDrafts } = await getAllDraftsFromDB()
+      
+      // Process story draft: generate preview URLs for files
+      if (rawStoryDraft && rawStoryDraft.files && rawStoryDraft.files.length > 0) {
+        const filesWithPreviews = rawStoryDraft.files.map(f => {
+          let preview = ''
+          if (f.file instanceof File) {
+            try {
+              preview = URL.createObjectURL(f.file)
+              previewUrlsRef.current.push(preview)
+            } catch (e) {
+              console.error('Failed to create object URL:', e)
+            }
+          }
+          return { id: f.id, file: f.file, preview }
+        })
+        
+        setStoryDraft({
+          ...rawStoryDraft,
+          files: filesWithPreviews
+        })
+      } else if (rawStoryDraft) {
+        setStoryDraft({
+          ...rawStoryDraft,
+          files: []
+        })
+      } else {
+        setStoryDraft(null)
+      }
+      
       setBlogDrafts(blogDrafts)
     } catch (err) {
       console.error('Failed to load drafts:', err)
@@ -396,20 +444,33 @@ export function LogsTab({ token, photos, settings, t, notify, initialTab, editSt
                 )}
 
                 {/* Story-specific metadata */}
-                {'files' in selectedDraft && (selectedDraft as StoryDraftData).files?.length > 0 && (
+                {'files' in selectedDraft && (selectedDraft as StoryDraftWithPreviews).files?.length > 0 && (
                   <div className="mt-6 pt-6 border-t border-border">
                     <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                      {t('admin.pending_files') || '待上传文件'} ({(selectedDraft as StoryDraftData).files.length})
+                      {t('admin.pending_files') || '待上传文件'} ({(selectedDraft as StoryDraftWithPreviews).files.length})
                     </span>
                     <div className="mt-3 grid grid-cols-4 gap-2">
-                      {(selectedDraft as StoryDraftData).files.slice(0, 8).map((f, i) => (
-                        <div key={f.id || i} className="aspect-square bg-muted rounded-md flex items-center justify-center text-muted-foreground text-xs">
-                          {f.file?.name?.substring(0, 10) || `文件 ${i + 1}`}
+                      {(selectedDraft as StoryDraftWithPreviews).files.slice(0, 8).map((f, i) => (
+                        <div key={f.id || i} className="aspect-square bg-muted rounded-md overflow-hidden">
+                          {f.preview ? (
+                            <img
+                              src={f.preview}
+                              alt={f.file?.name || `文件 ${i + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground gap-1">
+                              <ImageIcon className="w-4 h-4 opacity-30" />
+                              <span className="text-[10px] truncate max-w-full px-1">
+                                {f.file?.name?.substring(0, 10) || `文件 ${i + 1}`}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       ))}
-                      {(selectedDraft as StoryDraftData).files.length > 8 && (
+                      {(selectedDraft as StoryDraftWithPreviews).files.length > 8 && (
                         <div className="aspect-square bg-muted rounded-md flex items-center justify-center text-muted-foreground text-xs">
-                          +{(selectedDraft as StoryDraftData).files.length - 8}
+                          +{(selectedDraft as StoryDraftWithPreviews).files.length - 8}
                         </div>
                       )}
                     </div>

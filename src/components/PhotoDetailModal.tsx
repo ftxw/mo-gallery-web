@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   X,
@@ -16,8 +16,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  LayoutGrid,
+  ChevronDown,
 } from 'lucide-react'
-import { PhotoDto, resolveAssetUrl } from '@/lib/api'
+import { PhotoDto, resolveAssetUrl, getPhotoStory, type StoryDto, getPhotoComments, getStoryComments, type PublicCommentDto } from '@/lib/api'
 import { useSettings } from '@/contexts/SettingsContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -26,6 +28,14 @@ import { Toast, type Notification } from '@/components/Toast'
 import { StoryTab } from '@/components/StoryTab'
 
 type TabType = 'story' | 'info'
+
+// Cache for story data to avoid re-fetching
+interface StoryCache {
+  photoId: string
+  story: StoryDto | null
+  comments: PublicCommentDto[]
+  fetchedAt: number
+}
 
 interface PhotoDetailModalProps {
   photo: PhotoDto | null
@@ -58,6 +68,15 @@ export function PhotoDetailModal({
   const pendingNextRef = useRef(false)
   const prevPhotosLengthRef = useRef(allPhotos.length)
   
+  // Story data cache - persists across tab switches
+  const [storyCache, setStoryCache] = useState<StoryCache | null>(null)
+  const [storyLoading, setStoryLoading] = useState(false)
+  const storyFetchingRef = useRef(false)
+  
+  // Thumbnails visibility state
+  const [showThumbnails, setShowThumbnails] = useState(true)
+  const thumbnailsScrollRef = useRef<HTMLDivElement>(null)
+
   const currentPhotoIndex = photo && allPhotos.length > 0
     ? allPhotos.findIndex(p => p.id === photo.id)
     : -1
@@ -125,6 +144,94 @@ export function PhotoDetailModal({
     setTimeout(() => setNotifications((prev) => prev.filter((n) => n.id !== id)), 2000)
   }
 
+  // Check if the photo is within the cached story
+  const isPhotoInCachedStory = useCallback((pid: string) => {
+    return storyCache?.story?.photos?.some(p => p.id === pid) ?? false
+  }, [storyCache?.story?.photos])
+
+  // Fetch story data - only when modal opens or photo changes to a different story
+  useEffect(() => {
+    if (!photo || !isOpen) return
+    
+    // If photo is within the cached story, no need to refetch
+    if (storyCache && isPhotoInCachedStory(photo.id)) {
+      return
+    }
+    
+    // Prevent duplicate fetches
+    if (storyFetchingRef.current) return
+    
+    const fetchStoryData = async () => {
+      storyFetchingRef.current = true
+      setStoryLoading(true)
+      
+      try {
+        const storyData = await getPhotoStory(photo.id)
+        let commentsData: PublicCommentDto[] = []
+        
+        if (storyData?.id) {
+          commentsData = await getStoryComments(storyData.id)
+        } else {
+          commentsData = await getPhotoComments(photo.id)
+        }
+        
+        commentsData.sort((a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )
+        
+        setStoryCache({
+          photoId: photo.id,
+          story: storyData,
+          comments: commentsData,
+          fetchedAt: Date.now(),
+        })
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load story'
+        if (errorMessage.includes('No story found')) {
+          // No story, but try to get photo comments
+          try {
+            const photoComments = await getPhotoComments(photo.id)
+            photoComments.sort((a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            )
+            setStoryCache({
+              photoId: photo.id,
+              story: null,
+              comments: photoComments,
+              fetchedAt: Date.now(),
+            })
+          } catch {
+            setStoryCache({
+              photoId: photo.id,
+              story: null,
+              comments: [],
+              fetchedAt: Date.now(),
+            })
+          }
+        } else {
+          console.error('Failed to load story:', err)
+        }
+      } finally {
+        setStoryLoading(false)
+        storyFetchingRef.current = false
+      }
+    }
+    
+    fetchStoryData()
+  }, [photo?.id, isOpen, isPhotoInCachedStory])
+
+  // Clear cache when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setStoryCache(null)
+    }
+  }, [isOpen])
+
+  // Update comments in cache
+  const updateCommentsCache = useCallback((newComments: PublicCommentDto[]) => {
+    setStoryCache(prev => prev ? { ...prev, comments: newComments } : null)
+  }, [])
+
   useEffect(() => {
     if (photo && isOpen) {
       if (photo.dominantColors && photo.dominantColors.length > 0) {
@@ -137,10 +244,22 @@ export function PhotoDetailModal({
     }
   }, [photo, isOpen])
 
+  // Scroll to current photo in thumbnails
+  useEffect(() => {
+    if (showThumbnails && thumbnailsScrollRef.current && currentPhotoIndex >= 0) {
+      const activeElement = thumbnailsScrollRef.current.children[currentPhotoIndex] as HTMLElement
+      if (activeElement) {
+        activeElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+      }
+    }
+  }, [currentPhotoIndex, showThumbnails])
+
   const handleCopyColor = (color: string) => {
     navigator.clipboard.writeText(color)
     notify(t('common.copied'))
   }
+
+  const toggleThumbnails = () => setShowThumbnails(!showThumbnails)
 
   if (!photo) return null
 
@@ -170,72 +289,132 @@ export function PhotoDetailModal({
           
           <div className="flex flex-col lg:flex-row w-full h-full overflow-hidden">
             {/* Left: Immersive Photo Viewer */}
-            <div className="relative flex-1 bg-black/5 flex items-center justify-center group overflow-hidden">
-              {/* Close Button */}
-              <button
-                onClick={onClose}
-                className="absolute top-4 left-4 md:top-6 md:left-6 z-50 p-2.5 bg-black/20 hover:bg-black/40 text-white/90 hover:text-white rounded-full backdrop-blur-md transition-all border border-white/10"
-              >
-                <X className="w-5 h-5" />
-              </button>
+            <div className="relative flex-1 bg-black/5 flex flex-col overflow-hidden">
+              <div className="relative flex-1 flex items-center justify-center group overflow-hidden">
+                {/* Close Button */}
+                <button
+                  onClick={onClose}
+                  className="absolute top-4 left-4 md:top-6 md:left-6 z-50 p-2.5 bg-black/20 hover:bg-black/40 text-white/90 hover:text-white rounded-full backdrop-blur-md transition-all border border-white/10"
+                >
+                  <X className="w-5 h-5" />
+                </button>
 
-              <div className="absolute inset-0 flex items-center justify-center p-4 md:p-12">
-                <img
-                  src={resolveAssetUrl(photo.url, settings?.cdn_domain)}
-                  alt={photo.title}
-                  className="max-w-full max-h-full object-contain shadow-2xl"
-                />
-              </div>
+                <div className="absolute inset-0 flex items-center justify-center p-4 md:p-12">
+                  <img
+                    src={resolveAssetUrl(photo.url, settings?.cdn_domain)}
+                    alt={photo.title}
+                    className="max-w-full max-h-full object-contain shadow-2xl"
+                  />
+                </div>
 
-              {/* Navigation Arrows */}
-              {(allPhotos.length > 1 || hasMore) && (
-                <>
-                  <button
-                    onClick={handlePrevious}
-                    disabled={!hasPrevious}
-                    className="absolute left-4 top-1/2 -translate-y-1/2 p-4 text-foreground/20 hover:text-foreground disabled:opacity-0 transition-all"
-                  >
-                    <ChevronLeft className="w-8 h-8 md:w-12 md:h-12" />
-                  </button>
-                  <button
-                    onClick={handleNext}
-                    disabled={!hasNext || isLoadingMore}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 p-4 text-foreground/20 hover:text-foreground disabled:opacity-0 transition-all"
-                  >
-                    {isLoadingMore ? (
-                      <Loader2 className="w-8 h-8 md:w-12 md:h-12 animate-spin" />
-                    ) : (
-                      <ChevronRight className="w-8 h-8 md:w-12 md:h-12" />
-                    )}
-                  </button>
-                </>
-              )}
-              
-              {/* Bottom Meta Overlay */}
-              <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-black/50 to-transparent text-white opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none">
-                <div className="flex items-end justify-between max-w-screen-2xl mx-auto">
-                  <div className="space-y-2">
-                    <p className="font-serif text-2xl md:text-3xl">{photo.title}</p>
-                    {photo.takenAt && (
-                      <p className="font-mono text-xs opacity-70 uppercase tracking-widest">
-                        {user?.isAdmin
-                          ? new Date(photo.takenAt).toLocaleString(locale, {
-                              year: 'numeric',
-                              month: '2-digit',
-                              day: '2-digit',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : new Date(photo.takenAt).toLocaleDateString(locale, { dateStyle: 'long' })
-                        }
-                      </p>
-                    )}
-                  </div>
-                  <div className="font-mono text-xs opacity-60">
-                    {displayIndex} / {displayTotal}
+                {/* Navigation Arrows */}
+                {(allPhotos.length > 1 || hasMore) && (
+                  <>
+                    <button
+                      onClick={handlePrevious}
+                      disabled={!hasPrevious}
+                      className="absolute left-4 top-1/2 -translate-y-1/2 p-4 text-foreground/20 hover:text-foreground disabled:opacity-0 transition-all z-20"
+                    >
+                      <ChevronLeft className="w-8 h-8 md:w-12 md:h-12" />
+                    </button>
+                    <button
+                      onClick={handleNext}
+                      disabled={!hasNext || isLoadingMore}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 p-4 text-foreground/20 hover:text-foreground disabled:opacity-0 transition-all z-20"
+                    >
+                      {isLoadingMore ? (
+                        <Loader2 className="w-8 h-8 md:w-12 md:h-12 animate-spin" />
+                      ) : (
+                        <ChevronRight className="w-8 h-8 md:w-12 md:h-12" />
+                      )}
+                    </button>
+                  </>
+                )}
+                
+                {/* Bottom Meta Overlay */}
+                <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-black/50 to-transparent text-white opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none z-10">
+                  <div className="flex items-end justify-between max-w-screen-2xl mx-auto">
+                    <div className="space-y-2">
+                      <p className="font-serif text-2xl md:text-3xl">{photo.title}</p>
+                      {photo.takenAt && (
+                        <p className="font-mono text-xs opacity-70 uppercase tracking-widest">
+                          {user?.isAdmin
+                            ? new Date(photo.takenAt).toLocaleString(locale, {
+                                year: 'numeric',
+                                month: '2-digit',
+                                day: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : new Date(photo.takenAt).toLocaleDateString(locale, { dateStyle: 'long' })
+                          }
+                        </p>
+                      )}
+                    </div>
+                    <div className="font-mono text-xs opacity-60">
+                      {displayIndex} / {displayTotal}
+                    </div>
                   </div>
                 </div>
+
+                {/* Thumbnail Toggle Button */}
+                <div className="absolute bottom-4 right-4 z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                   <button
+                    onClick={toggleThumbnails}
+                    className={`p-2 bg-black/40 hover:bg-black/60 text-white/90 hover:text-white rounded backdrop-blur-md transition-all border border-white/10 ${showThumbnails ? 'bg-primary/40 border-primary/40' : ''}`}
+                    title={showThumbnails ? 'Hide Thumbnails' : 'Show Thumbnails'}
+                  >
+                    {showThumbnails ? <ChevronDown className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
+
+              {/* Thumbnails Strip */}
+              <AnimatePresence>
+                {showThumbnails && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3, type: "spring", stiffness: 200, damping: 25 }}
+                    className="relative bg-black/10 backdrop-blur-md border-t border-white/5 shrink-0 z-30 overflow-hidden"
+                  >
+                     <div
+                      ref={thumbnailsScrollRef}
+                      className="flex items-center gap-2 p-3 overflow-x-auto custom-scrollbar scroll-smooth h-24"
+                    >
+                      {allPhotos.map((p, idx) => (
+                        <button
+                          key={p.id}
+                          onClick={() => onPhotoChange?.(p)}
+                          className={`relative flex-shrink-0 h-full aspect-square rounded overflow-hidden transition-all group/thumb ${
+                            p.id === photo.id
+                              ? 'ring-2 ring-primary scale-95 opacity-100'
+                              : 'opacity-50 hover:opacity-100 hover:scale-105'
+                          }`}
+                        >
+                           <img
+                            src={resolveAssetUrl(p.thumbnailUrl || p.url, settings?.cdn_domain)}
+                            alt={p.title}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        </button>
+                      ))}
+                      {/* Load More Indicator in Thumbnails */}
+                      {hasMore && (
+                        <div className="flex-shrink-0 h-full bg-black/20 rounded flex items-center justify-center px-4">
+                           {isLoadingMore ? (
+                             <Loader2 className="w-4 h-4 animate-spin text-white/50" />
+                           ) : (
+                             <span className="text-[10px] text-white/50">...</span>
+                           )}
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Right: Info & Story Panel */}
@@ -340,6 +519,10 @@ export function PhotoDetailModal({
                       photoId={photo.id}
                       currentPhoto={photo}
                       onPhotoChange={onPhotoChange}
+                      cachedStory={storyCache?.story}
+                      cachedComments={storyCache?.comments}
+                      isLoading={storyLoading}
+                      onCommentsUpdate={updateCommentsCache}
                     />
                   )}
                 </div>

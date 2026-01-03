@@ -30,22 +30,43 @@ interface StoryTabProps {
   photoId: string
   currentPhoto: PhotoDto
   onPhotoChange?: (photo: PhotoDto) => void
+  // Optional cached data from parent (PhotoDetailModal)
+  cachedStory?: StoryDto | null
+  cachedComments?: PublicCommentDto[]
+  isLoading?: boolean
+  onCommentsUpdate?: (comments: PublicCommentDto[]) => void
 }
 
-export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps) {
+export function StoryTab({
+  photoId,
+  currentPhoto,
+  onPhotoChange,
+  cachedStory,
+  cachedComments,
+  isLoading: externalLoading,
+  onCommentsUpdate
+}: StoryTabProps) {
   const { t, locale } = useLanguage()
   const { settings } = useSettings()
   const { user, token } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
-  const [story, setStory] = useState<StoryDto | null>(null)
-  const [loading, setLoading] = useState(true)
+  
+  // Use cached data if provided, otherwise manage own state
+  const hasCachedData = cachedStory !== undefined
+  const [internalStory, setInternalStory] = useState<StoryDto | null>(null)
+  const [internalLoading, setInternalLoading] = useState(!hasCachedData)
   const [error, setError] = useState<string | null>(null)
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0)
 
+  // Use cached or internal data
+  const story = hasCachedData ? (cachedStory ?? null) : internalStory
+  const loading = hasCachedData ? (externalLoading ?? false) : internalLoading
+
   // Comments state
-  const [comments, setComments] = useState<PublicCommentDto[]>([])
-  const [commentsLoading, setCommentsLoading] = useState(true)
+  const [internalComments, setInternalComments] = useState<PublicCommentDto[]>([])
+  const comments = hasCachedData && cachedComments ? cachedComments : internalComments
+  const [commentsLoading, setCommentsLoading] = useState(!hasCachedData)
   const [submitting, setSubmitting] = useState(false)
   const [linuxdoOnly, setLinuxdoOnly] = useState(false)
   const [settingsLoaded, setSettingsLoaded] = useState(false)
@@ -96,7 +117,19 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
     }
   }, [isLinuxDoUser, isAdmin, user?.username])
 
+  // Only fetch data internally if no cached data is provided
   useEffect(() => {
+    // Skip internal fetching if parent provides cached data
+    if (hasCachedData) {
+      // Just update the photo index if within the story
+      if (story?.photos) {
+        const index = story.photos.findIndex(p => p.id === currentPhoto.id)
+        setCurrentPhotoIndex(index >= 0 ? index : 0)
+      }
+      setCommentsLoading(false)
+      return
+    }
+
     if (isPhotoInCurrentStory(photoId)) {
       const index = story!.photos.findIndex(p => p.id === currentPhoto.id)
       setCurrentPhotoIndex(index >= 0 ? index : 0)
@@ -112,7 +145,7 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
 
     async function fetchData() {
       if (isInitialLoad.current) {
-        setLoading(true)
+        setInternalLoading(true)
         setCommentsLoading(true)
       }
       setError(null)
@@ -120,7 +153,7 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
 
       try {
         const data = await getPhotoStory(photoId)
-        setStory(data)
+        setInternalStory(data)
         currentStoryId.current = data?.id ?? null
 
         if (data?.photos) {
@@ -133,16 +166,16 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
           allComments.sort((a, b) =>
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           )
-          setComments(allComments)
+          setInternalComments(allComments)
         }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to load story'
         if (errorMessage.includes('No story found')) {
-          setStory(null)
+          setInternalStory(null)
           setError(null)
           try {
             const photoComments = await getPhotoComments(photoId)
-            setComments(photoComments)
+            setInternalComments(photoComments)
           } catch (commentErr) {
             console.error('Failed to load comments:', commentErr)
           }
@@ -151,7 +184,7 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
           setError(errorMessage)
         }
       } finally {
-        setLoading(false)
+        setInternalLoading(false)
         setCommentsLoading(false)
         isFetching.current = false
         isInitialLoad.current = false
@@ -159,7 +192,7 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
     }
 
     fetchData()
-  }, [photoId, currentPhoto.id, isPhotoInCurrentStory])
+  }, [photoId, currentPhoto.id, isPhotoInCurrentStory, hasCachedData, story?.photos])
 
   useEffect(() => {
     if (story?.photos) {
@@ -200,7 +233,13 @@ export function StoryTab({ photoId, currentPhoto, onPhotoChange }: StoryTabProps
       newComments.sort((a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       )
-      setComments(newComments)
+      
+      // Update parent cache if available, otherwise update internal state
+      if (onCommentsUpdate) {
+        onCommentsUpdate(newComments)
+      } else {
+        setInternalComments(newComments)
+      }
     } catch (err) {
       console.error('Failed to refresh comments:', err)
     }

@@ -1,0 +1,52 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get tag message
+        id: tag_message
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          TAG_MESSAGE=$(git tag -l --format='%(contents)' $TAG_NAME)
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          # Use a delimiter for multi-line output
+          {
+            echo 'message<<EOF'
+            echo "$TAG_MESSAGE"
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
+
+      - name: Read Release Notes
+        id: release_notes
+        run: |
+          if [ -f "RELEASE.md" ]; then
+            {
+              echo 'notes<<EOF'
+              cat RELEASE.md
+              echo 'EOF'
+            } >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ${{ steps.tag_message.outputs.tag_name }}
+          body: ${{ steps.release_notes.outputs.notes || steps.tag_message.outputs.message }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

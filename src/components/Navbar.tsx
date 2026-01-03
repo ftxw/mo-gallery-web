@@ -217,7 +217,7 @@ export default function Navbar() {
               <div className={cn("flex items-center space-x-6", textColorClass)}>
                 <button
                   onClick={toggleLanguage}
-                  className={cn("font-sans text-[10px] font-bold tracking-widest flex items-center gap-1 transition-colors duration-300", hoverColorClass)}
+                  className={cn("font-sans text-ui-micro font-bold tracking-widest flex items-center gap-1 transition-colors duration-300", hoverColorClass)}
                   aria-label="Toggle Language"
                 >
                   {locale === 'zh' ? 'EN' : '中'}

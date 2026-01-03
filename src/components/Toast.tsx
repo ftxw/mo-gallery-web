@@ -26,7 +26,7 @@ export const Toast = ({ notifications, remove }: { notifications: Notification[]
           {n.type === 'success' && <Check className="w-5 h-5" />}
           {n.type === 'error' && <AlertCircle className="w-5 h-5" />}
           {n.type === 'info' && <Info className="w-5 h-5" />}
-          <span className="text-[10px] font-bold uppercase tracking-widest flex-1 leading-relaxed">{n.message}</span>
+          <span className="text-ui-micro font-bold uppercase tracking-widest flex-1 leading-relaxed">{n.message}</span>
           <button onClick={() => remove(n.id)} className="p-1 hover:opacity-70 transition-opacity">
             <X className="w-4 h-4" />
           </button>

@@ -32,7 +32,7 @@ export function GalleryHeader({
               className="flex items-center gap-4"
             >
               <div className="h-px w-8 bg-primary" />
-              <span className="text-[10px] font-bold uppercase tracking-[0.4em] text-primary">
+              <span className="text-ui-micro font-bold uppercase tracking-[0.4em] text-primary">
                 Collection
               </span>
             </motion.div>
@@ -52,10 +52,10 @@ export function GalleryHeader({
             transition={{ delay: 0.2 }}
             className="flex flex-col items-start md:items-end gap-2"
           >
-             <p className="text-xs text-muted-foreground font-serif italic max-w-xs text-right hidden md:block">
+             <p className="text-ui-xs text-muted-foreground font-serif italic max-w-xs text-right hidden md:block">
               Curated visual moments and captured memories.
             </p>
-            <div className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">
+            <div className="text-ui-micro font-mono text-muted-foreground uppercase tracking-widest">
               {photoCount} {t('gallery.count_suffix')}
             </div>
           </motion.div>
@@ -73,7 +73,7 @@ export function GalleryHeader({
               <button
                 key={cat}
                 onClick={() => onCategoryChange(cat)}
-                className={`relative py-2 text-xs font-bold uppercase tracking-[0.2em] transition-colors group ${
+                className={`relative py-2 text-ui-xs font-bold uppercase tracking-[0.2em] transition-colors group ${
                   activeCategory === cat
                     ? 'text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
@@ -140,7 +140,7 @@ export function GalleryToolbar({
             {/* Grayscale Toggle */}
             <button
               onClick={() => onGrayscaleChange(!grayscale)}
-              className={`flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest transition-colors ${
+              className={`flex items-center gap-2 text-ui-micro font-bold uppercase tracking-widest transition-colors ${
                 grayscale ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
               }`}
             >

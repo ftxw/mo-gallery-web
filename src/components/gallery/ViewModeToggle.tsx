@@ -23,7 +23,7 @@ export function ViewModeToggle({ viewMode, onViewModeChange, t }: ViewModeToggle
         <button
           key={mode}
           onClick={() => onViewModeChange(mode)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-all ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-ui-micro font-bold uppercase tracking-widest transition-all ${
             viewMode === mode
               ? 'bg-primary text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground'

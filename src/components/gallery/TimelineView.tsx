@@ -214,7 +214,7 @@ export function TimelineView({ photos, settings, grayscale, onPhotoClick }: Time
                   <Calendar className="w-5 h-5 text-primary" />
                   <div>
                     <h3 className="text-sm font-black uppercase tracking-[0.15em]">{t('gallery.timeline_navigator')}</h3>
-                    <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                    <p className="text-ui-micro text-muted-foreground font-mono mt-0.5">
                       {totalPhotos} {t('gallery.timeline_photos')} · {groupedByDay.length} {t('gallery.timeline_days')}
                     </p>
                   </div>
@@ -250,9 +250,9 @@ export function TimelineView({ photos, settings, grayscale, onPhotoClick }: Time
                         )}
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-[10px] text-muted-foreground font-mono">
-                          {yearGroup.months.reduce((sum, m) => sum + m.days.reduce((s, d) => s + d.photos.length, 0), 0)} {t('gallery.timeline_photos')}
-                        </span>
+                      <span className="text-ui-micro text-muted-foreground font-mono">
+                        {yearGroup.months.reduce((sum, m) => sum + m.days.reduce((s, d) => s + d.photos.length, 0), 0)} {t('gallery.timeline_photos')}
+                      </span>
                         <motion.div
                           animate={{ rotate: expandedYear === yearGroup.year ? 90 : 0 }}
                           transition={{ duration: 0.2 }}
@@ -276,7 +276,7 @@ export function TimelineView({ photos, settings, grayscale, onPhotoClick }: Time
                             <div key={monthGroup.month} className="border-t border-border/50">
                               {/* Month Header */}
                               <div className="px-6 py-2 bg-muted/30">
-                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                                <span className="text-ui-micro font-black uppercase tracking-[0.2em] text-muted-foreground">
                                   {yearGroup.year === 0 ? t('gallery.timeline_uploaded') : formatMonth(monthGroup.month)}
                                 </span>
                               </div>
@@ -292,7 +292,7 @@ export function TimelineView({ photos, settings, grayscale, onPhotoClick }: Time
                                     <span className="text-lg font-light font-serif group-hover:text-primary transition-colors">
                                       {formatDay(day.day)}
                                     </span>
-                                    <span className="text-[8px] text-muted-foreground font-mono">
+                                    <span className="text-ui-nano text-muted-foreground font-mono">
                                       {day.photos.length}
                                     </span>
                                     {/* Indicator dot */}
@@ -346,22 +346,22 @@ export function TimelineView({ photos, settings, grayscale, onPhotoClick }: Time
                     <Calendar className="w-4 h-4 text-primary group-hover:scale-110 transition-transform" />
                     {dayGroup.hasTakenAt ? (
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-black uppercase tracking-[0.2em]">
+                        <span className="text-ui-xs font-black uppercase tracking-[0.2em]">
                           {formatMonthShort(dayGroup.month)} {formatDay(dayGroup.day)}
                         </span>
-                        <span className="text-[10px] text-muted-foreground font-mono">
+                        <span className="text-ui-micro text-muted-foreground font-mono">
                           {dayGroup.year}
                         </span>
-                        <span className="text-[10px] text-muted-foreground/60 font-mono">
+                        <span className="text-ui-micro text-muted-foreground/60 font-mono">
                           {getWeekday(dayGroup.date)}
                         </span>
                       </div>
                     ) : (
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">
+                        <span className="text-ui-xs font-black uppercase tracking-[0.2em] text-muted-foreground">
                           {t('gallery.timeline_uploaded')}
                         </span>
-                        <span className="text-[10px] text-muted-foreground font-mono">
+                        <span className="text-ui-micro text-muted-foreground font-mono">
                           {formatMonthShort(dayGroup.month)} {formatDay(dayGroup.day)}, {dayGroup.year}
                         </span>
                       </div>
@@ -393,17 +393,17 @@ export function TimelineView({ photos, settings, grayscale, onPhotoClick }: Time
 
                     {/* Hover Overlay */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3">
-                      <p className="text-[8px] font-black text-primary uppercase tracking-[0.2em] mb-0.5">
+                      <p className="text-ui-nano font-black text-primary uppercase tracking-[0.2em] mb-0.5">
                         {photo.category.split(',')[0]}
                       </p>
-                      <h3 className="text-xs font-serif text-white leading-tight line-clamp-1">
+                      <h3 className="text-ui-xs font-serif text-white leading-tight line-clamp-1">
                         {photo.title}
                       </h3>
                     </div>
 
                     {/* Time Badge */}
                     {photo.takenAt && (
-                      <div className="absolute top-2 right-2 text-[8px] font-mono text-white/70 bg-black/40 px-1.5 py-0.5">
+                      <div className="absolute top-2 right-2 text-ui-nano font-mono text-white/70 bg-black/40 px-1.5 py-0.5">
                         {new Date(photo.takenAt).toLocaleTimeString('en-US', {
                           hour: '2-digit',
                           minute: '2-digit',
@@ -414,7 +414,7 @@ export function TimelineView({ photos, settings, grayscale, onPhotoClick }: Time
 
                     {/* No date indicator */}
                     {!photo.takenAt && (
-                      <div className="absolute top-2 right-2 text-[8px] font-mono text-white/50 bg-black/30 px-1.5 py-0.5">
+                      <div className="absolute top-2 right-2 text-ui-nano font-mono text-white/50 bg-black/30 px-1.5 py-0.5">
                         ?
                       </div>
                     )}

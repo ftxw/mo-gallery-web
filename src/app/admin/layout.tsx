@@ -137,7 +137,8 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
     photoIds: string[]
     isBulk: boolean
   } | null>(null)
-  const [deleteFromStorage, setDeleteFromStorage] = useState(true)
+  const [deleteOriginal, setDeleteOriginal] = useState(true)
+  const [deleteThumbnail, setDeleteThumbnail] = useState(true)
   const [deleteDialogLoading, setDeleteDialogLoading] = useState(false)
   const [photosWithStories, setPhotosWithStories] = useState<PhotoWithStories[]>([])
 
@@ -251,20 +252,22 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
       if (deleteConfirmDialog.isBulk) {
         setPhotosLoading(true)
         for (const id of deleteConfirmDialog.photoIds) {
-          await deletePhoto({ token, id, deleteFromStorage })
+          await deletePhoto({ token, id, deleteOriginal, deleteThumbnail })
         }
         setSelectedPhotoIds(new Set())
       } else {
         await deletePhoto({
           token,
           id: deleteConfirmDialog.photoIds[0],
-          deleteFromStorage,
+          deleteOriginal,
+          deleteThumbnail,
         })
       }
       await refreshPhotos()
       notify(t('admin.notify_photo_deleted'))
       setDeleteConfirmDialog(null)
-      setDeleteFromStorage(true)
+      setDeleteOriginal(true)
+      setDeleteThumbnail(true)
     } catch (err) {
       if (err instanceof ApiUnauthorizedError) {
         handleUnauthorized()
@@ -654,12 +657,15 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
           isOpen={!!deleteConfirmDialog}
           isBulk={deleteConfirmDialog?.isBulk ?? false}
           count={deleteConfirmDialog?.photoIds.length ?? 0}
-          deleteFromStorage={deleteFromStorage}
-          setDeleteFromStorage={setDeleteFromStorage}
+          deleteOriginal={deleteOriginal}
+          setDeleteOriginal={setDeleteOriginal}
+          deleteThumbnail={deleteThumbnail}
+          setDeleteThumbnail={setDeleteThumbnail}
           onConfirm={confirmDelete}
           onCancel={() => {
             setDeleteConfirmDialog(null)
-            setDeleteFromStorage(true)
+            setDeleteOriginal(true)
+            setDeleteThumbnail(true)
             setPhotosWithStories([])
           }}
           t={t}

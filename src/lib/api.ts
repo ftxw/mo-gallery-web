@@ -466,11 +466,13 @@ export interface PhotoDeleteError {
 export async function deletePhoto(input: {
   token: string
   id: string
-  deleteFromStorage?: boolean
+  deleteOriginal?: boolean
+  deleteThumbnail?: boolean
   force?: boolean
 }): Promise<void> {
   const params = new URLSearchParams()
-  if (input.deleteFromStorage) params.set('deleteFromStorage', 'true')
+  if (input.deleteOriginal) params.set('deleteOriginal', 'true')
+  if (input.deleteThumbnail) params.set('deleteThumbnail', 'true')
   if (input.force) params.set('force', 'true')
   const queryParam = params.toString() ? `?${params.toString()}` : ''
   await apiRequest(

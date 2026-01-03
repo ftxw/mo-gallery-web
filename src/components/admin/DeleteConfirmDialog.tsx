@@ -2,15 +2,17 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Trash2, AlertTriangle, Loader2, BookOpen, X } from 'lucide-react'
+import { Trash2, AlertTriangle, Loader2, BookOpen, X, ImageIcon, Image } from 'lucide-react'
 import { type PhotoWithStories } from '@/lib/api'
 
 interface DeleteConfirmDialogProps {
   isOpen: boolean
   isBulk: boolean
   count: number
-  deleteFromStorage: boolean
-  setDeleteFromStorage: (val: boolean) => void
+  deleteOriginal: boolean
+  setDeleteOriginal: (val: boolean) => void
+  deleteThumbnail: boolean
+  setDeleteThumbnail: (val: boolean) => void
   onConfirm: () => void
   onCancel: () => void
   t: (key: string) => string
@@ -23,8 +25,10 @@ export function DeleteConfirmDialog({
   isOpen,
   isBulk,
   count,
-  deleteFromStorage,
-  setDeleteFromStorage,
+  deleteOriginal,
+  setDeleteOriginal,
+  deleteThumbnail,
+  setDeleteThumbnail,
   onConfirm,
   onCancel,
   t,
@@ -168,18 +172,19 @@ export function DeleteConfirmDialog({
                         : `${t('admin.confirm_delete_single')}?`}
                     </p>
 
-                    <div className="p-4 bg-muted/30 border border-border">
+                    <div className="p-4 bg-muted/30 border border-border space-y-3">
+                      {/* Delete Original Option */}
                       <label className="flex items-start gap-3 cursor-pointer group">
                         <div className="relative mt-0.5">
                           <input
                             type="checkbox"
-                            checked={deleteFromStorage}
-                            onChange={(e) => setDeleteFromStorage(e.target.checked)}
+                            checked={deleteOriginal}
+                            onChange={(e) => setDeleteOriginal(e.target.checked)}
                             className="sr-only peer"
                             disabled={isDeleting}
                           />
                           <div className="w-5 h-5 border-2 border-border peer-checked:border-destructive peer-checked:bg-destructive transition-all flex items-center justify-center">
-                            {deleteFromStorage && (
+                            {deleteOriginal && (
                               <svg className="w-3 h-3 text-destructive-foreground" viewBox="0 0 12 12" fill="none">
                                 <path d="M2 6L5 9L10 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                               </svg>
@@ -187,11 +192,41 @@ export function DeleteConfirmDialog({
                           </div>
                         </div>
                         <div className="flex-1">
-                          <span className="text-sm font-bold uppercase tracking-wider text-foreground group-hover:text-destructive transition-colors">
-                            {t('admin.delete_from_storage')}
+                          <span className="text-sm font-bold uppercase tracking-wider text-foreground group-hover:text-destructive transition-colors flex items-center gap-2">
+                            <ImageIcon className="w-4 h-4" />
+                            {t('admin.delete_original')}
                           </span>
                           <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
-                            {t('admin.delete_from_storage_hint')}
+                            {t('admin.delete_original_hint')}
+                          </p>
+                        </div>
+                      </label>
+
+                      {/* Delete Thumbnail Option */}
+                      <label className="flex items-start gap-3 cursor-pointer group">
+                        <div className="relative mt-0.5">
+                          <input
+                            type="checkbox"
+                            checked={deleteThumbnail}
+                            onChange={(e) => setDeleteThumbnail(e.target.checked)}
+                            className="sr-only peer"
+                            disabled={isDeleting}
+                          />
+                          <div className="w-5 h-5 border-2 border-border peer-checked:border-destructive peer-checked:bg-destructive transition-all flex items-center justify-center">
+                            {deleteThumbnail && (
+                              <svg className="w-3 h-3 text-destructive-foreground" viewBox="0 0 12 12" fill="none">
+                                <path d="M2 6L5 9L10 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <span className="text-sm font-bold uppercase tracking-wider text-foreground group-hover:text-destructive transition-colors flex items-center gap-2">
+                            <Image className="w-4 h-4" />
+                            {t('admin.delete_thumbnail')}
+                          </span>
+                          <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
+                            {t('admin.delete_thumbnail_hint')}
                           </p>
                         </div>
                       </label>

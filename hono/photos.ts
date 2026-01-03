@@ -318,7 +318,8 @@ photos.post('/admin/photos', async (c) => {
 photos.delete('/admin/photos/:id', async (c) => {
   try {
     const id = c.req.param('id')
-    const deleteFromStorage = c.req.query('deleteFromStorage') === 'true'
+    const deleteOriginal = c.req.query('deleteOriginal') === 'true'
+    const deleteThumbnail = c.req.query('deleteThumbnail') === 'true'
     const forceDelete = c.req.query('force') === 'true'
 
     const photo = await db.photo.findUnique({
@@ -344,23 +345,49 @@ photos.delete('/admin/photos/:id', async (c) => {
         }, 400)
       }
 
-      // Only delete files from storage if user explicitly requested it
-      if (deleteFromStorage) {
+      // Delete files from storage based on user selection
+      if (deleteOriginal || deleteThumbnail) {
         // Get storage configuration for the provider used by this photo
         const storageConfig = await getStorageConfig(photo.storageProvider)
 
         // Create storage provider instance
         const storage = StorageProviderFactory.create(storageConfig)
 
-        // Delete files from storage
-        const thumbnailKey = photo.thumbnailUrl
-          ? photo.thumbnailUrl.split('/').pop()
-          : undefined
+        // Derive thumbnail key from storage key
+        // The thumbnail filename is "thumb-{originalFilename}"
+        // For local: storageKey = "filename.jpg" -> thumbnailKey = "thumb-filename.jpg"
+        // For R2/GitHub: storageKey = "path/filename.jpg" -> thumbnailKey = "path/thumb-filename.jpg"
+        let thumbnailKey: string | undefined
+        if (deleteThumbnail && photo.storageKey) {
+          const lastSlashIndex = photo.storageKey.lastIndexOf('/')
+          if (lastSlashIndex >= 0) {
+            // Has path prefix: "path/to/filename.jpg" -> "path/to/thumb-filename.jpg"
+            const pathPart = photo.storageKey.substring(0, lastSlashIndex + 1)
+            const filenamePart = photo.storageKey.substring(lastSlashIndex + 1)
+            thumbnailKey = `${pathPart}thumb-${filenamePart}`
+          } else {
+            // No path prefix: "filename.jpg" -> "thumb-filename.jpg"
+            thumbnailKey = `thumb-${photo.storageKey}`
+          }
+        }
 
-        await storage.delete(photo.storageKey || photo.url, thumbnailKey)
+        // Delete based on user selection
+        const originalKey = deleteOriginal ? (photo.storageKey || photo.url) : undefined
+        const thumbKey = deleteThumbnail ? thumbnailKey : undefined
+
+        if (originalKey && thumbKey) {
+          // Delete both
+          await storage.delete(originalKey, thumbKey)
+        } else if (originalKey) {
+          // Delete only original
+          await storage.delete(originalKey)
+        } else if (thumbKey) {
+          // Delete only thumbnail
+          await storage.delete(thumbKey)
+        }
       } else {
         console.log(
-          `Skipping file deletion for photo ${id} (deleteFromStorage=${deleteFromStorage})`
+          `Skipping file deletion for photo ${id} (deleteOriginal=${deleteOriginal}, deleteThumbnail=${deleteThumbnail})`
         )
       }
 

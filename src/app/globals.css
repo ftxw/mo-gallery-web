@@ -30,11 +30,31 @@
 }
 
 :root {
-  /* Global Font Size Scale - 全局字体大小控制 */
-  --text-xs: 0.825rem;     /* ~13.2px - 基础小字体 - Slightly larger for readability */
-  --text-xxs: 0.75rem;     /* 12px - 较小标签 */
-  --text-micro: 0.6875rem; /* 11px - 微型标签（如分类、日期等） */
-  --text-nano: 0.625rem;   /* 10px - 最小字体（如序号等） */
+  /* ========================================
+     全局字体大小系统 - Global Font Size System
+     按功能场景分类，确保可读性
+     ======================================== */
+  
+  /* 正文字体 - Body Text */
+  --text-body: 1rem;           /* 16px - 主要正文 */
+  --text-body-sm: 0.9375rem;   /* 15px - 次要正文 */
+  
+  /* UI 元素字体 - UI Elements */
+  --text-ui: 0.875rem;         /* 14px - 按钮、输入框、导航 */
+  --text-ui-sm: 0.8125rem;     /* 13px - 次要 UI 元素 */
+  
+  /* 标签字体 - Labels & Tags */
+  --text-label: 0.75rem;       /* 12px - 标签、分类、徽章 */
+  --text-label-sm: 0.6875rem;  /* 11px - 小标签（最小可读） */
+  
+  /* 辅助字体 - Auxiliary (谨慎使用) */
+  --text-caption: 0.625rem;    /* 10px - 仅用于序号、时间戳等辅助信息 */
+  
+  /* 兼容旧变量 - Legacy Support */
+  --text-xs: 0.8125rem;        /* 13px - 映射到 text-ui-sm */
+  --text-xxs: 0.75rem;         /* 12px - 映射到 text-label */
+  --text-micro: 0.6875rem;     /* 11px - 映射到 text-label-sm */
+  --text-nano: 0.625rem;       /* 10px - 映射到 text-caption */
 
   /* Light Mode - "Gallery Wall" (Stark White & Sharp Black) */
   --background: #FFFFFF; /* Pure White for cleaner look */
@@ -122,7 +142,47 @@
     text-wrap: balance;
   }
 
-  /* Global Font Size Utilities - 全局字体大小工具类 */
+  /* ========================================
+     语义化字体工具类 - Semantic Font Utilities
+     ======================================== */
+  
+  /* 正文 - Body */
+  .text-body {
+    font-size: var(--text-body);
+    line-height: 1.6;
+  }
+  .text-body-sm {
+    font-size: var(--text-body-sm);
+    line-height: 1.6;
+  }
+  
+  /* UI 元素 - UI Elements */
+  .text-ui {
+    font-size: var(--text-ui);
+    line-height: 1.5;
+  }
+  .text-ui-sm {
+    font-size: var(--text-ui-sm);
+    line-height: 1.5;
+  }
+  
+  /* 标签 - Labels */
+  .text-label {
+    font-size: var(--text-label);
+    line-height: 1.5;
+  }
+  .text-label-sm {
+    font-size: var(--text-label-sm);
+    line-height: 1.5;
+  }
+  
+  /* 辅助信息 - Caption */
+  .text-caption {
+    font-size: var(--text-caption);
+    line-height: 1.4;
+  }
+
+  /* 兼容旧类名 - Legacy Support */
   .text-ui-xs {
     font-size: var(--text-xs);
     line-height: 1.5;

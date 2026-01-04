@@ -13,7 +13,11 @@ import {
   StorageConfig,
   UploadFileInput,
   UploadResult,
+  MoveResult,
   StorageError,
+  ListOptions,
+  ListResult,
+  StorageFile,
 } from './types'
 
 export class GithubStorageProvider implements StorageProvider {
@@ -130,6 +134,96 @@ export class GithubStorageProvider implements StorageProvider {
     } catch (error) {
       console.error(`Failed to delete from GitHub: ${key}`, error)
       // Don't throw - deletion is best-effort
+    }
+  }
+
+  async download(key: string): Promise<Buffer> {
+    const { data } = await this.octokit.repos.getContent({
+      owner: this.owner,
+      repo: this.repo,
+      path: key,
+      ref: this.branch,
+    })
+    if (Array.isArray(data) || !('content' in data)) {
+      throw new StorageError('Invalid file response', 'GITHUB_DOWNLOAD_FAILED')
+    }
+    return Buffer.from(data.content, 'base64')
+  }
+
+  async move(oldKey: string, newPath: string, thumbnailKey?: string): Promise<MoveResult> {
+    const filename = oldKey.split('/').pop()!
+    // Build new key directly without basePath prefix (absolute path from repo root)
+    const newKey = newPath ? `${newPath}/${filename}`.replace(/\/+/g, '/').replace(/^\/+/, '') : filename
+
+    // Download, upload to new path, delete old
+    const buffer = await this.download(oldKey)
+    await this.uploadToGithub(newKey, buffer, `Move: ${oldKey} -> ${newKey}`)
+    await this.deleteFromGithub(oldKey)
+
+    const result: MoveResult = {
+      newKey,
+      newUrl: this.getUrl(newKey),
+    }
+
+    if (thumbnailKey) {
+      const thumbFilename = thumbnailKey.split('/').pop()!
+      // Build thumbnail key directly without basePath prefix
+      const newThumbKey = newPath ? `${newPath}/${thumbFilename}`.replace(/\/+/g, '/').replace(/^\/+/, '') : thumbFilename
+      const thumbBuffer = await this.download(thumbnailKey)
+      await this.uploadToGithub(newThumbKey, thumbBuffer, `Move thumbnail: ${thumbnailKey} -> ${newThumbKey}`)
+      await this.deleteFromGithub(thumbnailKey)
+      result.newThumbnailKey = newThumbKey
+      result.newThumbnailUrl = this.getUrl(newThumbKey)
+    }
+
+    return result
+  }
+
+  async list(options?: ListOptions): Promise<ListResult> {
+    const files: StorageFile[] = []
+    const targetPath = options?.prefix || this.basePath
+
+    await this.listRecursive(targetPath, files)
+
+    const start = options?.cursor ? parseInt(options.cursor) : 0
+    const limit = options?.limit || 1000
+    const slice = files.slice(start, start + limit)
+
+    return {
+      files: slice,
+      cursor: start + limit < files.length ? String(start + limit) : undefined,
+      hasMore: start + limit < files.length,
+    }
+  }
+
+  private async listRecursive(path: string, files: StorageFile[]): Promise<void> {
+    try {
+      const { data } = await this.octokit.repos.getContent({
+        owner: this.owner,
+        repo: this.repo,
+        path,
+        ref: this.branch,
+      })
+
+      const items = Array.isArray(data) ? data : [data]
+
+      for (const item of items) {
+        if (item.type === 'file') {
+          files.push({
+            key: item.path,
+            size: item.size || 0,
+            lastModified: new Date(),
+            url: this.getUrl(item.path),
+          })
+        } else if (item.type === 'dir') {
+          await this.listRecursive(item.path, files)
+        }
+      }
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'status' in error && error.status === 404) {
+        return
+      }
+      throw error
     }
   }
 

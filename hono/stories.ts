@@ -20,6 +20,7 @@ const UpdateStorySchema = z.object({
   content: z.string().min(1).max(50000).optional(),
   isPublished: z.boolean().optional(),
   coverPhotoId: z.string().uuid().optional().nullable(),
+  createdAt: z.string().datetime().optional().nullable(),
 })
 
 const AddPhotosSchema = z.object({
@@ -48,6 +49,7 @@ stories.get('/stories', async (c) => {
       photos: story.photos.map((p) => ({
         ...p,
         category: p.categories.map((c) => c.name).join(','),
+        dominantColors: p.dominantColors ? JSON.parse(p.dominantColors) : [],
       })),
     }))
 
@@ -83,6 +85,7 @@ stories.get('/stories/:id', async (c) => {
       photos: story.photos.map((p) => ({
         ...p,
         category: p.categories.map((c) => c.name).join(','),
+        dominantColors: p.dominantColors ? JSON.parse(p.dominantColors) : [],
       })),
     }
 
@@ -313,6 +316,9 @@ stories.patch('/admin/stories/:id', async (c) => {
     if (validated.content !== undefined) updateData.content = validated.content
     if (validated.isPublished !== undefined) updateData.isPublished = validated.isPublished
     if (validated.coverPhotoId !== undefined) updateData.coverPhotoId = validated.coverPhotoId
+    if (validated.createdAt !== undefined) {
+      updateData.createdAt = validated.createdAt ? new Date(validated.createdAt) : new Date()
+    }
 
     const story = await db.story.update({
       where: { id },

@@ -43,6 +43,33 @@ export interface StorageConfig {
   r2Path?: string
 }
 
+export interface MoveResult {
+  newKey: string
+  newUrl: string
+  newThumbnailKey?: string
+  newThumbnailUrl?: string
+}
+
+export interface StorageFile {
+  key: string
+  size: number
+  lastModified: Date
+  url: string
+}
+
+export interface ListOptions {
+  prefix?: string
+  cursor?: string
+  limit?: number
+  fullScan?: boolean  // Scan entire bucket, ignore basePath
+}
+
+export interface ListResult {
+  files: StorageFile[]
+  cursor?: string
+  hasMore: boolean
+}
+
 export interface StorageProvider {
   /**
    * Upload a file and optionally its thumbnail
@@ -58,6 +85,11 @@ export interface StorageProvider {
   delete(key: string, thumbnailKey?: string): Promise<void>
 
   /**
+   * Download a file from storage
+   */
+  download(key: string): Promise<Buffer>
+
+  /**
    * Get the public URL for a file
    */
   getUrl(key: string): string
@@ -66,6 +98,16 @@ export interface StorageProvider {
    * Validate provider configuration
    */
   validateConfig(): void
+
+  /**
+   * Move a file to a new path (same filename, different directory)
+   */
+  move(oldKey: string, newPath: string, thumbnailKey?: string): Promise<MoveResult>
+
+  /**
+   * List files in storage
+   */
+  list(options?: ListOptions): Promise<ListResult>
 }
 
 export class StorageError extends Error {

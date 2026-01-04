@@ -17,8 +17,8 @@ import {
   Settings2,
   CloudUpload,
 } from 'lucide-react'
-import imageCompression from 'browser-image-compression'
 import { AdminSettingsDto, getAdminStories, getAdminAlbums, type StoryDto, type AlbumDto } from '@/lib/api'
+import { compressImage, type CompressionMode } from '@/lib/image-compress'
 import { useUploadQueue } from '@/contexts/UploadQueueContext'
 import { CustomSelect } from '@/components/ui/CustomSelect'
 import { CustomInput } from '@/components/ui/CustomInput'
@@ -268,7 +268,7 @@ export function UploadTab({
   const [uploadPath, setUploadPath] = useState('')
   const [isInitialized, setIsInitialized] = useState(false)
 
-  const [compressionEnabled, setCompressionEnabled] = useState(false)
+  const [compressionMode, setCompressionMode] = useState<CompressionMode>('none')
   const [maxSizeMB, setMaxSizeMB] = useState(4)
   const [compressing, setCompressing] = useState(false)
   const [compressionProgress, setCompressionProgress] = useState({ current: 0, total: 0 })
@@ -360,18 +360,16 @@ export function UploadTab({
     if (!token) return
 
     let filesToUpload = uploadFiles
-    if (compressionEnabled) {
+    if (compressionMode !== 'none') {
       setCompressing(true)
       setCompressionProgress({ current: 0, total: uploadFiles.length })
       const compressed: UploadFile[] = []
       for (let i = 0; i < uploadFiles.length; i++) {
         const item = uploadFiles[i]
-        if (item.file.size > maxSizeMB * 1024 * 1024) {
-          try {
-            const blob = await imageCompression(item.file, { maxSizeMB, maxWidthOrHeight: 4096, useWebWorker: true, preserveExif: true })
-            compressed.push({ id: item.id, file: new File([blob], item.file.name, { type: blob.type }) })
-          } catch { compressed.push(item) }
-        } else compressed.push(item)
+        try {
+          const file = await compressImage(item.file, { mode: compressionMode, maxSizeMB })
+          compressed.push({ id: item.id, file })
+        } catch { compressed.push(item) }
         setCompressionProgress({ current: i + 1, total: uploadFiles.length })
       }
       filesToUpload = compressed
@@ -582,7 +580,7 @@ export function UploadTab({
                 </div>
                 <div>
                   <label className="block text-xs text-muted-foreground mb-2">{t('admin.path_prefix')}</label>
-                  {/* System configured prefix (read-only) */}
+                  {/* System configured prefix (read-only) - always show root path */}
                   {(() => {
                     const systemPrefix = uploadSource === 'r2'
                       ? settings?.r2_path
@@ -590,10 +588,12 @@ export function UploadTab({
                         ? settings?.github_path
                         : undefined
                     
-                    return systemPrefix ? (
+                    const displayPrefix = systemPrefix || '/'
+                    
+                    return (
                       <div className="flex items-stretch">
                         <div className="px-3 py-2 bg-muted/50 border-b border-l border-t border-border text-xs text-muted-foreground font-mono flex items-center min-w-0">
-                          <span className="truncate" title={systemPrefix}>{systemPrefix}/</span>
+                          <span className="truncate" title={displayPrefix}>{displayPrefix}{systemPrefix ? '/' : ''}</span>
                         </div>
                         <CustomInput
                           variant="config"
@@ -603,13 +603,6 @@ export function UploadTab({
                           className="flex-1 rounded-l-none"
                         />
                       </div>
-                    ) : (
-                      <CustomInput
-                        variant="config"
-                        value={uploadPath}
-                        onChange={e => setUploadPath(e.target.value)}
-                        placeholder="e.g., 2025/vacation"
-                      />
                     )
                   })()}
                 </div>
@@ -617,20 +610,22 @@ export function UploadTab({
 
               {/* Compression */}
               <div className="pt-4 border-t border-border/50">
-                <div className="flex items-center justify-between mb-3">
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Minimize2 className="w-3 h-3" />
-                    {t('admin.image_compression')}
-                  </label>
-                  <button
-                    onClick={() => setCompressionEnabled(!compressionEnabled)}
-                    className={`relative w-10 h-5 rounded-full transition-colors ${compressionEnabled ? 'bg-primary' : 'bg-muted'}`}
-                  >
-                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-background shadow transition-transform ${compressionEnabled ? 'left-5' : 'left-0.5'}`} />
-                  </button>
-                </div>
-                {compressionEnabled && (
-                  <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                  <Minimize2 className="w-3 h-3" />
+                  {t('admin.image_compression')}
+                </label>
+                <CustomSelect
+                  value={compressionMode}
+                  onChange={(v) => setCompressionMode(v as CompressionMode)}
+                  options={[
+                    { value: 'none', label: t('admin.compression_none') || '原图无压缩' },
+                    { value: 'quality', label: t('admin.compression_quality') || '质量优先' },
+                    { value: 'balanced', label: t('admin.compression_balanced') || '平衡模式' },
+                    { value: 'size', label: t('admin.compression_size') || '体积优先' },
+                  ]}
+                />
+                {compressionMode !== 'none' && (
+                  <div className="flex items-center gap-3 mt-3">
                     <span className="text-xs text-muted-foreground">{t('admin.max_size_mb')}</span>
                     <CustomInput
                       variant="config"
@@ -781,7 +776,7 @@ export function UploadTab({
         storyName={selectedStoryName}
         storageProvider={uploadSource}
         storagePath={fullStoragePath}
-        compressionEnabled={compressionEnabled}
+        compressionEnabled={compressionMode !== 'none'}
         t={t}
       />
     </>

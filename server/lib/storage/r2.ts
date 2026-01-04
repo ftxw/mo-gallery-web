@@ -9,13 +9,20 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
+  CopyObjectCommand,
+  ListObjectsV2Command,
 } from '@aws-sdk/client-s3'
 import {
   StorageProvider,
   StorageConfig,
   UploadFileInput,
   UploadResult,
+  MoveResult,
   StorageError,
+  ListOptions,
+  ListResult,
+  StorageFile,
 } from './types'
 
 export class R2StorageProvider implements StorageProvider {
@@ -132,9 +139,100 @@ export class R2StorageProvider implements StorageProvider {
     }
   }
 
+  async download(key: string): Promise<Buffer> {
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+    })
+    const response = await this.client.send(command)
+    const stream = response.Body as NodeJS.ReadableStream
+    const chunks: Buffer[] = []
+    for await (const chunk of stream) {
+      chunks.push(Buffer.from(chunk))
+    }
+    return Buffer.concat(chunks)
+  }
+
   getUrl(key: string): string {
     const baseUrl = this.publicUrl.replace(/\/+$/, '')
     return `${baseUrl}/${key}`
+  }
+
+  async move(oldKey: string, newPath: string, thumbnailKey?: string): Promise<MoveResult> {
+    const filename = oldKey.split('/').pop()!
+    // Build new key directly without basePath prefix (absolute path from bucket root)
+    const newKey = newPath ? `${newPath}/${filename}`.replace(/\/+/g, '/').replace(/^\/+/, '') : filename
+
+    // Copy to new location then delete old
+    await this.client.send(new CopyObjectCommand({
+      Bucket: this.bucket,
+      CopySource: `${this.bucket}/${oldKey}`,
+      Key: newKey,
+    }))
+    await this.deleteFromR2(oldKey)
+
+    const result: MoveResult = {
+      newKey,
+      newUrl: this.getUrl(newKey),
+    }
+
+    if (thumbnailKey) {
+      const thumbFilename = thumbnailKey.split('/').pop()!
+      // Build thumbnail key directly without basePath prefix
+      const newThumbKey = newPath ? `${newPath}/${thumbFilename}`.replace(/\/+/g, '/').replace(/^\/+/, '') : thumbFilename
+      await this.client.send(new CopyObjectCommand({
+        Bucket: this.bucket,
+        CopySource: `${this.bucket}/${thumbnailKey}`,
+        Key: newThumbKey,
+      }))
+      await this.deleteFromR2(thumbnailKey)
+      result.newThumbnailKey = newThumbKey
+      result.newThumbnailUrl = this.getUrl(newThumbKey)
+    }
+
+    return result
+  }
+
+  async list(options?: ListOptions): Promise<ListResult> {
+    const allFiles: StorageFile[] = []
+    let continuationToken = options?.cursor
+    const prefix = options?.fullScan ? undefined : (options?.prefix || this.basePath || undefined)
+
+    // Paginate through all results
+    do {
+      const command = new ListObjectsV2Command({
+        Bucket: this.bucket,
+        Prefix: prefix,
+        MaxKeys: 1000,
+        ContinuationToken: continuationToken,
+      })
+
+      const response = await this.client.send(command)
+
+      const files = (response.Contents || []).map(obj => ({
+        key: obj.Key!,
+        size: obj.Size || 0,
+        lastModified: obj.LastModified || new Date(),
+        url: this.getUrl(obj.Key!),
+      }))
+
+      allFiles.push(...files)
+      continuationToken = response.NextContinuationToken
+
+      // Stop if we have enough files or no more pages
+      if (!response.IsTruncated || (options?.limit && allFiles.length >= options.limit)) {
+        break
+      }
+    } while (continuationToken)
+
+    // Apply limit if specified
+    const limitedFiles = options?.limit ? allFiles.slice(0, options.limit) : allFiles
+
+    return {
+      files: limitedFiles,
+      cursor: undefined,
+      hasMore: options?.limit ? allFiles.length > options.limit : false,
+    }
   }
 
   private buildKey(filename: string, subfolder?: string): string {

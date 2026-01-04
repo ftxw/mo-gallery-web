@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, X, Loader2, Image as ImageIcon, Send, Sparkles, Database, ChevronDown, Check, FolderOpen, Minimize2, Save, Clock, Trash2 } from 'lucide-react'
-import imageCompression from 'browser-image-compression'
+import { compressImage } from '@/lib/image-compress'
 import { useAuth } from '@/contexts/AuthContext'
 import { uploadPhotoWithProgress, createStory, getAdminSettings, getAdminAlbums, addPhotosToAlbum, type PhotoDto, type AlbumDto, resolveAssetUrl } from '@/lib/api'
 import { useSettings } from '@/contexts/SettingsContext'
@@ -322,18 +322,8 @@ export function QuickStoryEditor({ onSuccess }: QuickStoryEditorProps) {
           let fileToUpload = pending.file
 
           // Compression Logic
-          if (compressionEnabled && fileToUpload.size > maxSizeMB * 1024 * 1024) {
-            try {
-              const blob = await imageCompression(fileToUpload, {
-                maxSizeMB,
-                maxWidthOrHeight: 4096,
-                useWebWorker: true,
-                preserveExif: true
-              })
-              fileToUpload = new File([blob], pending.file.name, { type: blob.type })
-            } catch (e) {
-              console.error('Compression failed, using original', e)
-            }
+          if (compressionEnabled) {
+            fileToUpload = await compressImage(fileToUpload, { maxSizeMB, maxWidthOrHeight: 4096 })
           }
 
           try {
@@ -341,7 +331,6 @@ export function QuickStoryEditor({ onSuccess }: QuickStoryEditorProps) {
               token,
               file: fileToUpload,
               title: fileToUpload.name,
-              category: 'Story',
               storage_provider: storageProvider,
               onProgress: (progress) => {
                 setUploadQueue(prev => prev.map(p => p.id === pending.id ? { ...p, progress } : p))

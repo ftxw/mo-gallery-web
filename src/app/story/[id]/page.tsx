@@ -3,13 +3,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { motion, useScroll, useTransform } from 'framer-motion'
-import { ArrowLeft, Calendar, ImageIcon, ChevronLeft, ChevronRight, X, MousePointer2, Clock } from 'lucide-react'
+import { ArrowLeft, Calendar, Clock } from 'lucide-react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { getStory, type StoryDto, type PhotoDto, resolveAssetUrl } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useSettings } from '@/contexts/SettingsContext'
 import { StoryComments } from '@/components/StoryComments'
+import { PhotoDetailModal } from '@/components/PhotoDetailModal'
 
 // Dynamically import MilkdownViewer to avoid SSR issues
 const MilkdownViewer = dynamic(
@@ -33,7 +34,7 @@ export default function StoryDetailPage() {
   const [story, setStory] = useState<StoryDto | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null)
+  const [selectedPhoto, setSelectedPhoto] = useState<PhotoDto | null>(null)
   
   const heroRef = useRef<HTMLDivElement>(null)
   const { scrollY } = useScroll()
@@ -70,27 +71,6 @@ export default function StoryDetailPage() {
     return story.photos[0]
   }
 
-  const handlePrevPhoto = () => {
-    if (selectedPhotoIndex === null || !story) return
-    setSelectedPhotoIndex(selectedPhotoIndex > 0 ? selectedPhotoIndex - 1 : story.photos.length - 1)
-  }
-
-  const handleNextPhoto = () => {
-    if (selectedPhotoIndex === null || !story) return
-    setSelectedPhotoIndex(selectedPhotoIndex < story.photos.length - 1 ? selectedPhotoIndex + 1 : 0)
-  }
-
-  // Keyboard navigation
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (selectedPhotoIndex === null) return
-      if (e.key === 'ArrowLeft') handlePrevPhoto()
-      if (e.key === 'ArrowRight') handleNextPhoto()
-      if (e.key === 'Escape') setSelectedPhotoIndex(null)
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedPhotoIndex, story])
 
   if (loading) {
     return (
@@ -262,19 +242,16 @@ export default function StoryDetailPage() {
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: index * 0.1 }}
-                  className={`relative group cursor-none overflow-hidden bg-muted
+                  className={`relative group cursor-pointer overflow-hidden bg-muted
                     ${index % 5 === 0 ? 'md:col-span-2 aspect-[16/10]' : 'aspect-square'}
                   `}
-                  onClick={() => setSelectedPhotoIndex(index)}
+                  onClick={() => setSelectedPhoto(photo)}
                 >
                   <img
                     src={getPhotoUrl(photo, true)}
                     alt={photo.title}
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                   />
-                  <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <MousePointer2 className="w-6 h-6 text-white" />
-                  </div>
                 </motion.div>
               ))}
             </div>
@@ -300,60 +277,15 @@ export default function StoryDetailPage() {
         </div>
       </div>
 
-      {/* Sophisticated Lightbox */}
-      {selectedPhotoIndex !== null && story.photos[selectedPhotoIndex] && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[100] bg-black/98 flex items-center justify-center"
-          onClick={() => setSelectedPhotoIndex(null)}
-        >
-          <button
-            onClick={() => setSelectedPhotoIndex(null)}
-            className="absolute top-12 right-12 p-2 text-white/30 hover:text-white transition-colors z-10"
-          >
-            <X className="w-8 h-8" />
-          </button>
-
-          {story.photos.length > 1 && (
-            <>
-              <button
-                onClick={(e) => { e.stopPropagation(); handlePrevPhoto() }}
-                className="absolute left-8 top-1/2 -translate-y-1/2 p-4 text-white/20 hover:text-white transition-colors z-10"
-              >
-                <ChevronLeft className="w-12 h-12" />
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleNextPhoto() }}
-                className="absolute right-8 top-1/2 -translate-y-1/2 p-4 text-white/20 hover:text-white transition-colors z-10"
-              >
-                <ChevronRight className="w-12 h-12" />
-              </button>
-            </>
-          )}
-
-          <div className="w-full h-full flex items-center justify-center p-6 md:p-24" onClick={(e) => e.stopPropagation()}>
-            <motion.img
-              key={selectedPhotoIndex}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              src={getPhotoUrl(story.photos[selectedPhotoIndex])}
-              alt={story.photos[selectedPhotoIndex].title}
-              className="max-w-full max-h-full object-contain"
-            />
-          </div>
-
-          <div className="absolute bottom-12 left-12 flex flex-col gap-2">
-            <div className="text-white font-serif text-2xl tracking-tight">
-              {story.photos[selectedPhotoIndex].title || 'Untitled Record'}
-            </div>
-            <div className="text-white/40 font-mono text-[10px] uppercase tracking-widest">
-              {selectedPhotoIndex + 1} of {story.photos.length}
-            </div>
-          </div>
-        </motion.div>
-      )}
+      {/* Photo Detail Modal */}
+      <PhotoDetailModal
+        photo={selectedPhoto}
+        isOpen={!!selectedPhoto}
+        onClose={() => setSelectedPhoto(null)}
+        onPhotoChange={setSelectedPhoto}
+        allPhotos={story.photos}
+        hideStoryTab
+      />
     </div>
   )
 }

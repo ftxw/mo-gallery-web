@@ -395,7 +395,7 @@ export function uploadPhotoWithProgress(input: {
   token: string
   file: File
   title: string
-  category: string | string[]
+  category?: string | string[]
   storage_provider?: string
   storage_path?: string
   onProgress?: (progress: number) => void
@@ -404,8 +404,10 @@ export function uploadPhotoWithProgress(input: {
     const form = new FormData()
     form.set('file', input.file)
     form.set('title', input.title)
-    const categoryValue = Array.isArray(input.category) ? input.category.join(',') : input.category
-    form.set('category', categoryValue)
+    if (input.category) {
+      const categoryValue = Array.isArray(input.category) ? input.category.join(',') : input.category
+      form.set('category', categoryValue)
+    }
     if (input.storage_provider) form.set('storage_provider', input.storage_provider)
     if (input.storage_path) form.set('storage_path', input.storage_path)
 
@@ -522,6 +524,14 @@ export async function checkPhotosStories(
   return result
 }
 
+export async function reanalyzePhotoColors(token: string, photoId: string): Promise<PhotoDto> {
+  return apiRequestData<PhotoDto>(
+    `/api/admin/photos/${encodeURIComponent(photoId)}/reanalyze-colors`,
+    { method: 'POST' },
+    token
+  )
+}
+
 export async function updatePhoto(input: {
   token: string
   id: string
@@ -530,6 +540,7 @@ export async function updatePhoto(input: {
     isFeatured?: boolean
     category?: string
     takenAt?: string | null
+    storagePath?: string
   }
 }): Promise<PhotoDto> {
   return apiRequestData<PhotoDto>(
@@ -711,7 +722,7 @@ export async function createStory(
 export async function updateStory(
   token: string,
   id: string,
-  data: { title?: string; content?: string; isPublished?: boolean; coverPhotoId?: string | null }
+  data: { title?: string; content?: string; isPublished?: boolean; coverPhotoId?: string | null; createdAt?: string | null }
 ): Promise<StoryDto> {
   return apiRequestData<StoryDto>(
     `/api/admin/stories/${encodeURIComponent(id)}`,
@@ -1037,6 +1048,81 @@ export async function updateFriendLink(
     {
       method: 'PATCH',
       body: JSON.stringify(data),
+    },
+    token
+  )
+}
+
+// --- Storage Cleanup APIs ---
+
+export type FileStatus = 'linked' | 'orphan' | 'missing' | 'missing_original' | 'missing_thumbnail'
+
+export interface StorageFile {
+  key: string
+  url: string
+  size: number
+  lastModified: string
+  status: FileStatus
+  photoId?: string
+  photoTitle?: string
+  missingType?: 'original' | 'thumbnail' | 'both'
+  hasThumb?: boolean
+}
+
+export async function generateThumbnail(token: string, photoId: string): Promise<PhotoDto> {
+  return apiRequestData<PhotoDto>(
+    `/api/admin/photos/${encodeURIComponent(photoId)}/generate-thumbnail`,
+    { method: 'POST' },
+    token
+  )
+}
+
+export interface StorageScanStats {
+  total: number
+  linked: number
+  orphan: number
+  missing: number
+  missingOriginal: number
+  missingThumbnail: number
+}
+
+export interface StorageScanResult {
+  files: StorageFile[]
+  stats: StorageScanStats
+}
+
+export async function scanStorage(
+  token: string,
+  params: { provider: string; status?: string; search?: string }
+): Promise<StorageScanResult> {
+  const query = buildQuery(params)
+  return apiRequestData<StorageScanResult>(`/api/admin/storage/scan${query}`, {}, token)
+}
+
+export async function cleanupStorage(
+  token: string,
+  keys: string[],
+  provider: string
+): Promise<{ deleted: number; failed: number; errors: string[] }> {
+  return apiRequestData<{ deleted: number; failed: number; errors: string[] }>(
+    '/api/admin/storage/cleanup',
+    {
+      method: 'POST',
+      body: JSON.stringify({ keys, provider }),
+    },
+    token
+  )
+}
+
+export async function fixMissingPhotos(
+  token: string,
+  photoIds: string[]
+): Promise<{ deleted: number }> {
+  return apiRequestData<{ deleted: number }>(
+    '/api/admin/storage/fix-missing',
+    {
+      method: 'POST',
+      body: JSON.stringify({ photoIds }),
     },
     token
   )

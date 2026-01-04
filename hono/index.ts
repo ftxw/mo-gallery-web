@@ -9,6 +9,7 @@ import comments from './comments'
 import blogs from './blogs'
 import albums from './albums'
 import friends from './friends'
+import storage from './storage'
 
 const route = new Hono()
 
@@ -38,6 +39,7 @@ route.route('/', comments)
 route.route('/', blogs)
 route.route('/', albums)
 route.route('/', friends)
+route.route('/', storage)
 route.route('/settings', settings)
 route.route('/admin/settings', settings)
 

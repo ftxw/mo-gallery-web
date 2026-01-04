@@ -15,6 +15,8 @@ import {
   Plus,
   Check,
   ImageIcon,
+  Palette,
+  RefreshCw,
 } from 'lucide-react'
 import {
   PhotoDto,
@@ -27,6 +29,7 @@ import {
   updateStory,
   addPhotosToStory,
   removePhotoFromStory,
+  reanalyzePhotoColors,
 } from '@/lib/api'
 import { CustomInput } from '@/components/ui/CustomInput'
 import { CustomSelect } from '@/components/ui/CustomSelect'
@@ -62,6 +65,7 @@ export function PhotoDetailPanel({
     title: '',
     category: '',
     isFeatured: false,
+    storagePath: '',
   })
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<'info' | 'story'>('info')
@@ -76,6 +80,8 @@ export function PhotoDetailPanel({
     isPublished: false,
   })
   const [storySaving, setStorySaving] = useState(false)
+  const [reanalyzing, setReanalyzing] = useState(false)
+  const [displayColors, setDisplayColors] = useState<string[]>([])
 
   // Photo selection for adding to story
   const [showPhotoSelector, setShowPhotoSelector] = useState(false)
@@ -84,11 +90,18 @@ export function PhotoDetailPanel({
   // Reset form when photo changes
   useEffect(() => {
     if (photo) {
+      // Extract path from storageKey (remove filename)
+      const storageKey = photo.storageKey || ''
+      const lastSlash = storageKey.lastIndexOf('/')
+      const storagePath = lastSlash >= 0 ? storageKey.substring(0, lastSlash) : ''
+      
       setEditData({
         title: photo.title || '',
         category: photo.category || '',
         isFeatured: photo.isFeatured || false,
+        storagePath,
       })
+      setDisplayColors(photo.dominantColors || [])
       setActiveTab('info')
       setStory(null)
       setStoryLoaded(false)
@@ -133,6 +146,12 @@ export function PhotoDetailPanel({
 
     setSaving(true)
     try {
+      // Check if path changed
+      const storageKey = photo.storageKey || ''
+      const lastSlash = storageKey.lastIndexOf('/')
+      const currentPath = lastSlash >= 0 ? storageKey.substring(0, lastSlash) : ''
+      const pathChanged = editData.storagePath !== currentPath
+
       const updated = await updatePhoto({
         token,
         id: photo.id,
@@ -140,6 +159,7 @@ export function PhotoDetailPanel({
           title: editData.title,
           category: editData.category,
           isFeatured: editData.isFeatured,
+          ...(pathChanged && { storagePath: editData.storagePath }),
         },
       })
       onSave(updated)
@@ -450,6 +470,66 @@ export function PhotoDetailPanel({
                     </div>
                   </div>
 
+                  {/* Color Analysis */}
+                  <div className="pt-4 border-t border-border">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                        <Palette className="w-3 h-3" />
+                        {t('gallery.palette')}
+                      </h4>
+                      <button
+                        onClick={async () => {
+                          if (!token || !photo) return
+                          setReanalyzing(true)
+                          try {
+                            const updated = await reanalyzePhotoColors(token, photo.id)
+                            setDisplayColors(updated.dominantColors || [])
+                            onSave(updated)
+                            notify(t('admin.notify_success'), 'success')
+                          } catch (err) {
+                            if (err instanceof ApiUnauthorizedError) {
+                              onUnauthorized()
+                            } else {
+                              notify(t('common.error'), 'error')
+                            }
+                          } finally {
+                            setReanalyzing(false)
+                          }
+                        }}
+                        disabled={reanalyzing}
+                        className="flex items-center gap-1 text-[10px] text-primary hover:underline disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${reanalyzing ? 'animate-spin' : ''}`} />
+                        {t('admin.reanalyze_colors')}
+                      </button>
+                    </div>
+                    {displayColors && displayColors.length > 0 ? (
+                      <div className="flex gap-3 flex-wrap">
+                        {displayColors.map((color, index) => (
+                          <div
+                            key={index}
+                            className="relative group cursor-pointer"
+                            onClick={() => {
+                              navigator.clipboard.writeText(color)
+                              notify(t('common.copied'), 'success')
+                            }}
+                            title={color}
+                          >
+                            <div
+                              className="w-8 h-8 rounded-full border-2 border-border shadow-sm transition-transform group-hover:scale-110"
+                              style={{ backgroundColor: color }}
+                            />
+                            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-mono text-muted-foreground uppercase whitespace-nowrap">
+                              {color}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">{t('admin.no_color_data')}</p>
+                    )}
+                  </div>
+
                   {/* File Info */}
                   <div className="pt-4 border-t border-border">
                     <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-4">
@@ -468,9 +548,23 @@ export function PhotoDetailPanel({
                         <span>Storage</span>
                         <span className="uppercase">{photo.storageProvider}</span>
                       </div>
-                      <div className="flex justify-between flex-col gap-1">
-                        <span>Path</span>
-                        <span className="text-[10px] break-all bg-muted/50 p-1 rounded font-mono">{photo.storageKey || photo.url}</span>
+                      <div className="flex flex-col gap-1">
+                        <span>{t('admin.path_prefix')}</span>
+                        <div className="flex items-stretch">
+                          <div className="px-3 py-2 bg-muted/50 border-b border-l border-t border-border text-xs text-muted-foreground font-mono flex items-center">
+                            /
+                          </div>
+                          <CustomInput
+                            variant="config"
+                            value={editData.storagePath}
+                            onChange={(e) => setEditData({ ...editData, storagePath: e.target.value })}
+                            placeholder="uploads/2024"
+                            className="flex-1 rounded-l-none"
+                          />
+                        </div>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {t('admin.filename')}: {(photo.storageKey || photo.url).split('/').pop()}
+                        </span>
                       </div>
                     </div>
                   </div>

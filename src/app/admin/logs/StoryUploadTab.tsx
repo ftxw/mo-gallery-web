@@ -16,8 +16,8 @@ import {
   ArrowRight,
   Minimize2,
 } from 'lucide-react'
-import imageCompression from 'browser-image-compression'
 import { AdminSettingsDto, uploadPhoto, createStory } from '@/lib/api'
+import { compressImage, type CompressionMode } from '@/lib/image-compress'
 import { formatFileSize } from '@/lib/utils'
 import { CustomInput } from '@/components/ui/CustomInput'
 import { useUploadQueue } from '@/contexts/UploadQueueContext'
@@ -78,7 +78,7 @@ export function StoryUploadTab({
   const [uploadError, setUploadError] = useState('')
 
   // Compression settings
-  const [compressionEnabled, setCompressionEnabled] = useState(false)
+  const [compressionMode, setCompressionMode] = useState<CompressionMode>('none')
   const [maxSizeMB, setMaxSizeMB] = useState(4)
   const [compressing, setCompressing] = useState(false)
   const [compressionProgress, setCompressionProgress] = useState({ current: 0, total: 0 })
@@ -226,7 +226,7 @@ export function StoryUploadTab({
     let filesToUpload = uploadFiles.filter(f => f.status === 'pending')
 
     // Compress images if enabled
-    if (compressionEnabled) {
+    if (compressionMode !== 'none') {
       setCompressing(true)
       setCompressionProgress({ current: 0, total: filesToUpload.length })
 
@@ -234,27 +234,10 @@ export function StoryUploadTab({
       for (let i = 0; i < filesToUpload.length; i++) {
         const item = filesToUpload[i]
         try {
-          // Only compress if file is larger than target size
-          if (item.file.size > maxSizeMB * 1024 * 1024) {
-            const compressedBlob = await imageCompression(item.file, {
-              maxSizeMB: maxSizeMB,
-              maxWidthOrHeight: 4096,
-              useWebWorker: true,
-              preserveExif: true,
-            })
-            // Ensure the compressed result is a File with the original name
-            const compressedFile = new File(
-              [compressedBlob],
-              item.file.name,
-              { type: compressedBlob.type, lastModified: Date.now() }
-            )
-            compressedFiles.push({ ...item, file: compressedFile })
-          } else {
-            compressedFiles.push(item)
-          }
-        } catch (err) {
-          console.error(`Failed to compress ${item.file.name}:`, err)
-          compressedFiles.push(item) // Use original if compression fails
+          const file = await compressImage(item.file, { mode: compressionMode, maxSizeMB })
+          compressedFiles.push({ ...item, file })
+        } catch {
+          compressedFiles.push(item)
         }
         setCompressionProgress({ current: i + 1, total: filesToUpload.length })
       }
@@ -515,44 +498,35 @@ export function StoryUploadTab({
 
             {/* Image Compression */}
             <div className="border-t border-border pt-6">
-              <div className="flex items-center justify-between mb-4">
-                <label className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                  <Minimize2 className="w-3 h-3" />
-                  {t('admin.image_compression')}
-                </label>
-                <button
-                  onClick={() => setCompressionEnabled(!compressionEnabled)}
-                  className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
-                    compressionEnabled ? 'bg-primary' : 'bg-muted'
-                  }`}
-                >
-                  <span
-                    className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg ring-0 transition-transform ${
-                      compressionEnabled ? 'translate-x-5' : 'translate-x-1'
-                    }`}
+              <label className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">
+                <Minimize2 className="w-3 h-3" />
+                {t('admin.image_compression')}
+              </label>
+              <select
+                value={compressionMode}
+                onChange={(e) => setCompressionMode(e.target.value as CompressionMode)}
+                className="w-full p-3 bg-background border-b border-border focus:border-primary outline-none text-xs font-bold uppercase tracking-wider"
+              >
+                <option value="none">{t('admin.compression_none')}</option>
+                <option value="quality">{t('admin.compression_quality')}</option>
+                <option value="balanced">{t('admin.compression_balanced')}</option>
+                <option value="size">{t('admin.compression_size')}</option>
+              </select>
+              {compressionMode !== 'none' && (
+                <div className="flex items-center gap-3 mt-3">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap">
+                    {t('admin.max_size_mb')}
+                  </label>
+                  <CustomInput
+                    variant="config"
+                    type="number"
+                    min="0.5"
+                    max="10"
+                    step="0.5"
+                    value={maxSizeMB}
+                    onChange={(e) => setMaxSizeMB(parseFloat(e.target.value) || 4)}
+                    className="w-20 text-center"
                   />
-                </button>
-              </div>
-              {compressionEnabled && (
-                <div className="space-y-3">
-                  <p className="text-[10px] text-muted-foreground">
-                    {t('admin.compression_hint')}
-                  </p>
-                  <div className="flex items-center gap-3">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap">
-                      {t('admin.max_size_mb')}
-                    </label>
-                    <CustomInput
-                      variant="config"
-                      type="number"
-                      min="0.5"
-                      max="10"
-                      step="0.5"
-                      value={maxSizeMB}
-                      onChange={(e) => setMaxSizeMB(parseFloat(e.target.value) || 4)}
-                      className="w-20 text-center"
-                    />
-                  </div>
                 </div>
               )}
             </div>

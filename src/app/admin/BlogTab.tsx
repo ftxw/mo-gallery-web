@@ -28,6 +28,7 @@ import {
   deleteBlog,
   ApiUnauthorizedError
 } from '@/lib/api'
+import { CustomSelect, type SelectOption } from '@/components/ui/CustomSelect'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import type { MilkdownEditorHandle } from '@/components/MilkdownEditor'
@@ -38,6 +39,8 @@ import {
   getAllBlogDraftsFromDB,
   type BlogDraftData
 } from '@/lib/client-db'
+import { SimpleDeleteDialog } from '@/components/admin/SimpleDeleteDialog'
+import { DraftRestoreDialog } from '@/components/admin/DraftRestoreDialog'
 
 // Dynamically import MilkdownEditor to avoid SSR issues
 const MilkdownEditor = dynamic(
@@ -59,6 +62,7 @@ interface BlogTabProps {
   settings: PublicSettingsDto | null
   t: (key: string) => string
   notify: (message: string, type?: 'success' | 'error' | 'info') => void
+  refreshKey?: number
 }
 
 interface BlogFormData {
@@ -70,7 +74,7 @@ interface BlogFormData {
   isPublished: boolean
 }
 
-export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
+export function BlogTab({ photos, settings, t, notify, refreshKey }: BlogTabProps) {
   const { token, logout } = useAuth()
   const router = useRouter()
   const [blogs, setBlogs] = useState<BlogDto[]>([])
@@ -85,6 +89,30 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
   const [draftSaved, setDraftSaved] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+  
+  // Track initial state for dirty checking
+  const [isDirty, setIsDirty] = useState(false)
+  const initialBlogRef = useRef<{
+    title: string
+    content: string
+    category: string
+    tags: string
+    isPublished: boolean
+  } | null>(null)
+  
+  // Delete dialog state
+  const [deleteBlogId, setDeleteBlogId] = useState<string | null>(null)
+  
+  // Status filter state
+  const [statusFilter, setStatusFilter] = useState('')
+  
+  // Draft restore dialog state
+  const [draftRestoreDialog, setDraftRestoreDialog] = useState<{
+    isOpen: boolean
+    draft: BlogDraftData | null
+    blog: BlogDto | null
+    isNew: boolean
+  }>({ isOpen: false, draft: null, blog: null, isNew: false })
 
   const handleUnauthorized = () => {
     logout()
@@ -109,9 +137,20 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
     }
   }
 
+  const initialLoadRef = useRef(false)
+  
   useEffect(() => {
-    fetchBlogs()
-  }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!initialLoadRef.current) {
+      fetchBlogs()
+      initialLoadRef.current = true
+    }
+  }, [token])
+  
+  useEffect(() => {
+    if (refreshKey && refreshKey > 0) {
+      fetchBlogs()
+    }
+  }, [refreshKey])
 
   // Load draft when entering editor mode
   const loadDraftForBlog = useCallback(async (blogId?: string) => {
@@ -169,9 +208,27 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
     return new Date(lastSavedAt).toLocaleDateString()
   }, [lastSavedAt, t])
 
-  // Auto-save draft when content changes
+  // Check if content has changed (dirty check)
   useEffect(() => {
-    if (!currentBlog) return
+    if (editMode !== 'editor' || !currentBlog || !initialBlogRef.current) {
+      setIsDirty(false)
+      return
+    }
+    
+    const initial = initialBlogRef.current
+    const hasChanged =
+      currentBlog.title !== initial.title ||
+      currentBlog.content !== initial.content ||
+      currentBlog.category !== initial.category ||
+      currentBlog.tags !== initial.tags ||
+      currentBlog.isPublished !== initial.isPublished
+    
+    setIsDirty(hasChanged)
+  }, [editMode, currentBlog?.title, currentBlog?.content, currentBlog?.category, currentBlog?.tags, currentBlog?.isPublished])
+
+  // Auto-save draft when content changes (only if dirty)
+  useEffect(() => {
+    if (!currentBlog || !isDirty) return
     if (!currentBlog.title && !currentBlog.content) return
 
     // Clear existing timer
@@ -189,23 +246,42 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
         clearTimeout(autoSaveTimerRef.current)
       }
     }
-  }, [currentBlog?.title, currentBlog?.content, currentBlog?.category, currentBlog?.tags, currentBlog?.isPublished, saveDraft])
+  }, [currentBlog?.title, currentBlog?.content, currentBlog?.category, currentBlog?.tags, currentBlog?.isPublished, saveDraft, isDirty])
 
-  const handleCreateBlog = async () => {
-    // Check for existing draft for new blog
-    const draft = await loadDraftForBlog(undefined)
-    if (draft) {
-      setCurrentBlog({
-        title: draft.title,
-        content: draft.content,
-        category: draft.category || t('blog.uncategorized'),
-        tags: draft.tags || '',
-        isPublished: draft.isPublished,
-      })
-      if (draft.title || draft.content) {
-        notify(t('story.draft_restored') || '已恢复草稿', 'info')
-      }
-    } else {
+  // Apply draft to current blog
+  const applyDraft = useCallback((draft: BlogDraftData, blogId?: string) => {
+    setCurrentBlog({
+      id: blogId,
+      title: draft.title,
+      content: draft.content,
+      category: draft.category || t('blog.uncategorized'),
+      tags: draft.tags || '',
+      isPublished: draft.isPublished,
+    })
+    setLastSavedAt(draft.savedAt)
+    // Update initial ref to match restored draft (so it's not considered dirty)
+    initialBlogRef.current = {
+      title: draft.title,
+      content: draft.content,
+      category: draft.category || t('blog.uncategorized'),
+      tags: draft.tags || '',
+      isPublished: draft.isPublished,
+    }
+    notify(t('admin.restored_from_draft'), 'info')
+  }, [t, notify])
+
+  // Handle draft restore dialog confirm
+  const handleDraftRestore = useCallback(() => {
+    if (draftRestoreDialog.draft) {
+      applyDraft(draftRestoreDialog.draft, draftRestoreDialog.blog?.id)
+    }
+    setDraftRestoreDialog({ isOpen: false, draft: null, blog: null, isNew: false })
+    setEditMode('editor')
+  }, [draftRestoreDialog, applyDraft])
+
+  // Handle draft restore dialog discard
+  const handleDraftDiscard = useCallback(() => {
+    if (draftRestoreDialog.isNew) {
       setCurrentBlog({
         title: '',
         content: '',
@@ -213,25 +289,76 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
         tags: '',
         isPublished: false,
       })
+    } else if (draftRestoreDialog.blog) {
+      setCurrentBlog({
+        id: draftRestoreDialog.blog.id,
+        title: draftRestoreDialog.blog.title,
+        content: draftRestoreDialog.blog.content,
+        category: draftRestoreDialog.blog.category || t('blog.uncategorized'),
+        tags: draftRestoreDialog.blog.tags || '',
+        isPublished: draftRestoreDialog.blog.isPublished,
+      })
     }
+    setLastSavedAt(null)
+    setDraftRestoreDialog({ isOpen: false, draft: null, blog: null, isNew: false })
+    setEditMode('editor')
+  }, [draftRestoreDialog, t])
+
+  // Handle draft restore dialog cancel (close without action)
+  const handleDraftCancel = useCallback(() => {
+    setDraftRestoreDialog({ isOpen: false, draft: null, blog: null, isNew: false })
+    setCurrentBlog(null)
+  }, [])
+
+  const handleCreateBlog = async () => {
+    // Set initial state for dirty checking
+    initialBlogRef.current = {
+      title: '',
+      content: '',
+      category: t('blog.uncategorized'),
+      tags: '',
+      isPublished: false,
+    }
+    
+    // Check for existing draft for new blog
+    const draft = await loadDraftForBlog(undefined)
+    if (draft && (draft.title || draft.content)) {
+      // Show dialog to ask user
+      setCurrentBlog({
+        title: '',
+        content: '',
+        category: t('blog.uncategorized'),
+        tags: '',
+        isPublished: false,
+      })
+      setDraftRestoreDialog({ isOpen: true, draft, blog: null, isNew: true })
+      return
+    }
+    
+    setCurrentBlog({
+      title: '',
+      content: '',
+      category: t('blog.uncategorized'),
+      tags: '',
+      isPublished: false,
+    })
     setEditMode('editor')
   }
 
   const handleEditBlog = async (blog: BlogDto) => {
+    // Set initial state for dirty checking
+    initialBlogRef.current = {
+      title: blog.title,
+      content: blog.content,
+      category: blog.category || t('blog.uncategorized'),
+      tags: blog.tags || '',
+      isPublished: blog.isPublished,
+    }
+    
     // Check for existing draft for this blog
     const draft = await loadDraftForBlog(blog.id)
     if (draft && draft.savedAt > new Date(blog.updatedAt).getTime()) {
-      // Draft is newer than saved version
-      setCurrentBlog({
-        id: blog.id,
-        title: draft.title,
-        content: draft.content,
-        category: draft.category || t('blog.uncategorized'),
-        tags: draft.tags || '',
-        isPublished: draft.isPublished,
-      })
-      notify(t('story.draft_restored') || '已恢复草稿', 'info')
-    } else {
+      // Draft is newer than saved version, show dialog
       setCurrentBlog({
         id: blog.id,
         title: blog.title,
@@ -240,17 +367,26 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
         tags: blog.tags || '',
         isPublished: blog.isPublished,
       })
-      setLastSavedAt(null)
+      setDraftRestoreDialog({ isOpen: true, draft, blog, isNew: false })
+      return
     }
+    
+    setCurrentBlog({
+      id: blog.id,
+      title: blog.title,
+      content: blog.content,
+      category: blog.category || t('blog.uncategorized'),
+      tags: blog.tags || '',
+      isPublished: blog.isPublished,
+    })
+    setLastSavedAt(null)
     setEditMode('editor')
   }
 
-  const handleDeleteBlog = async (id: string) => {
-    if (!token) return
-    if (!window.confirm(t('common.confirm') + '?')) return
-
+  const confirmDeleteBlog = async () => {
+    if (!token || !deleteBlogId) return
     try {
-      await deleteBlog(token, id)
+      await deleteBlog(token, deleteBlogId)
       await fetchBlogs()
       notify(t('admin.notify_log_deleted'))
     } catch (error) {
@@ -260,6 +396,8 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
       }
       notify(t('common.error'), 'error')
       console.error('Failed to delete blog:', error)
+    } finally {
+      setDeleteBlogId(null)
     }
   }
 
@@ -343,20 +481,35 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
     )
   }
 
+  // Status filter options for blogs
+  const statusOptions: SelectOption[] = [
+    { value: '', label: t('admin.all_status') || '全部状态' },
+    { value: 'published', label: t('admin.published') || '已发布' },
+    { value: 'draft', label: t('admin.draft') || '草稿' },
+  ]
+
   return (
     <div className="h-full flex flex-col gap-6 overflow-hidden">
       {editMode === 'list' ? (
         <div className="space-y-8 flex-1 flex flex-col overflow-hidden">
           <div className="flex items-center justify-between border-b border-border pb-4 flex-shrink-0">
             <div className="flex items-center gap-4">
-              <BookText className="w-6 h-6 text-primary" />
-              <h3 className="font-serif text-2xl uppercase tracking-tight">
-                {t('nav.logs')}
-              </h3>
+              <input
+                type="text"
+                placeholder={t('admin.search_placeholder') || '搜索...'}
+                className="px-3 py-2 text-sm bg-transparent border border-border rounded-md focus:border-primary outline-none w-48"
+              />
+              <CustomSelect
+                value={statusFilter}
+                options={statusOptions}
+                onChange={setStatusFilter}
+                placeholder={t('admin.all_status') || '全部状态'}
+                className="w-32"
+              />
             </div>
             <button
               onClick={handleCreateBlog}
-              className="flex items-center px-6 py-2 bg-primary text-primary-foreground text-xs font-bold uppercase tracking-widest hover:opacity-90 transition-all"
+              className="flex items-center px-6 py-2 bg-primary text-primary-foreground text-xs font-bold uppercase tracking-widest hover:opacity-90 transition-all rounded-md"
             >
               <Plus className="w-4 h-4 mr-2" />
               {t('ui.create_blog')}
@@ -364,7 +517,14 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar">
             <div className="grid grid-cols-1 gap-4">
-              {blogs.map((blog) => (
+              {blogs
+                .filter((blog) => {
+                  if (!statusFilter) return true
+                  if (statusFilter === 'published') return blog.isPublished
+                  if (statusFilter === 'draft') return !blog.isPublished
+                  return true
+                })
+                .map((blog) => (
                 <div
                   key={blog.id}
                   className="flex items-center justify-between p-6 border border-border hover:border-primary transition-all group"
@@ -391,7 +551,7 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
                     <div className="flex items-center gap-4 text-[10px] text-muted-foreground font-mono uppercase">
                       <span className="flex items-center gap-1">
                         <History className="w-3 h-3" />{' '}
-                        {new Date(blog.updatedAt).toLocaleDateString()}
+                        {new Date(blog.updatedAt).toLocaleString()}
                       </span>
                       <span className="flex items-center gap-1">
                         <FileText className="w-3 h-3" /> {blog.content.length}{' '}
@@ -407,7 +567,7 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
                       <Edit3 className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleDeleteBlog(blog.id)}
+                      onClick={() => setDeleteBlogId(blog.id)}
                       className="p-2 text-muted-foreground hover:text-destructive transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -435,6 +595,8 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
                   setEditMode('list')
                   setCurrentBlog(null)
                   setLastSavedAt(null)
+                  initialBlogRef.current = null
+                  setIsDirty(false)
                 }}
                 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest hover:text-primary transition-colors"
               >
@@ -587,6 +749,16 @@ export function BlogTab({ photos, settings, t, notify }: BlogTabProps) {
           </div>
         </div>
       )}
+
+      <SimpleDeleteDialog isOpen={!!deleteBlogId} onConfirm={confirmDeleteBlog} onCancel={() => setDeleteBlogId(null)} t={t} />
+      <DraftRestoreDialog
+        isOpen={draftRestoreDialog.isOpen}
+        draftTime={draftRestoreDialog.draft?.savedAt || 0}
+        onRestore={handleDraftRestore}
+        onDiscard={handleDraftDiscard}
+        onCancel={handleDraftCancel}
+        t={t}
+      />
     </div>
   )
 }

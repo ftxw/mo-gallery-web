@@ -8,6 +8,21 @@ export interface StoryDraftData {
   files: { id: string; file: File }[];
 }
 
+// ============ Story Editor Draft Types (for StoriesTab) ============
+export interface StoryEditorDraftData {
+  id: string; // 'story_editor_new' or 'story_editor_<storyId>'
+  storyId?: string;
+  title: string;
+  content: string;
+  isPublished: boolean;
+  createdAt: string;
+  coverPhotoId?: string | null;
+  pendingCoverId?: string | null; // Cover ID for pending (not yet uploaded) images
+  photoIds: string[];
+  savedAt: number;
+  files: { id: string; file: File; takenAt?: string }[];
+}
+
 // ============ Blog Draft Types ============
 export interface BlogDraftData {
   id: string; // 'blog_draft_new' for new drafts, or 'blog_draft_<blogId>' for existing blogs
@@ -236,32 +251,143 @@ export async function clearAllBlogDraftsFromDB(): Promise<void> {
   }
 }
 
+// ============ Story Editor Draft Functions (for StoriesTab) ============
+const STORY_EDITOR_DRAFT_PREFIX = 'story_editor_';
+
+function getStoryEditorDraftKey(storyId?: string): string {
+  return storyId ? `${STORY_EDITOR_DRAFT_PREFIX}${storyId}` : `${STORY_EDITOR_DRAFT_PREFIX}new`;
+}
+
+export async function saveStoryEditorDraftToDB(data: {
+  storyId?: string;
+  title: string;
+  content: string;
+  isPublished: boolean;
+  createdAt: string;
+  coverPhotoId?: string | null;
+  pendingCoverId?: string | null;
+  photoIds: string[];
+  files: { id: string; file: File }[];
+}): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      
+      const draftData: StoryEditorDraftData = {
+        id: getStoryEditorDraftKey(data.storyId),
+        storyId: data.storyId,
+        title: data.title,
+        content: data.content,
+        isPublished: data.isPublished,
+        createdAt: data.createdAt,
+        coverPhotoId: data.coverPhotoId,
+        pendingCoverId: data.pendingCoverId,
+        photoIds: data.photoIds,
+        savedAt: Date.now(),
+        files: data.files,
+      };
+
+      const request = store.put(draftData);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Failed to save story editor draft:', error);
+    throw error;
+  }
+}
+
+export async function getStoryEditorDraftFromDB(storyId?: string): Promise<StoryEditorDraftData | undefined> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.get(getStoryEditorDraftKey(storyId));
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Failed to get story editor draft:', error);
+    return undefined;
+  }
+}
+
+export async function clearStoryEditorDraftFromDB(storyId?: string): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.delete(getStoryEditorDraftKey(storyId));
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Failed to clear story editor draft:', error);
+  }
+}
+
+/**
+ * Get all story editor drafts from IndexedDB
+ */
+export async function getAllStoryEditorDraftsFromDB(): Promise<StoryEditorDraftData[]> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const allDrafts = request.result;
+        const storyEditorDrafts = allDrafts.filter(
+          (d): d is StoryEditorDraftData => d.id?.startsWith(STORY_EDITOR_DRAFT_PREFIX)
+        );
+        resolve(storyEditorDrafts);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Failed to get all story editor drafts:', error);
+    return [];
+  }
+}
+
 // ============ Get All Drafts (for admin/logs display) ============
 
 export interface AllDraftsData {
   storyDraft: StoryDraftData | null;
   blogDrafts: BlogDraftData[];
+  storyEditorDrafts: StoryEditorDraftData[];
 }
 
 /**
- * Get all drafts (story + blog) for display in admin/logs
+ * Get all drafts (story + blog + story editor) for display in admin/logs
  */
 export async function getAllDraftsFromDB(): Promise<AllDraftsData> {
   try {
-    const [storyDraft, blogDrafts] = await Promise.all([
+    const [storyDraft, blogDrafts, storyEditorDrafts] = await Promise.all([
       getDraftFromDB(),
-      getAllBlogDraftsFromDB()
+      getAllBlogDraftsFromDB(),
+      getAllStoryEditorDraftsFromDB()
     ]);
     
     return {
       storyDraft: storyDraft || null,
-      blogDrafts
+      blogDrafts,
+      storyEditorDrafts
     };
   } catch (error) {
     console.error('Failed to get all drafts from IndexedDB:', error);
     return {
       storyDraft: null,
-      blogDrafts: []
+      blogDrafts: [],
+      storyEditorDrafts: []
     };
   }
 }

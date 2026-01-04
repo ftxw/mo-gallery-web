@@ -419,6 +419,40 @@ photos.patch('/admin/photos/:id', async (c) => {
     if (body.isFeatured !== undefined) updateData.isFeatured = body.isFeatured
     if (body.takenAt !== undefined) updateData.takenAt = body.takenAt ? new Date(body.takenAt) : null
 
+    // Handle storage path change (move file)
+    if (body.storagePath !== undefined) {
+      const photo = await db.photo.findUnique({ where: { id } })
+      if (!photo) {
+        return c.json({ error: 'Photo not found' }, 404)
+      }
+
+      const storageConfig = await getStorageConfig(photo.storageProvider)
+      const storage = StorageProviderFactory.create(storageConfig)
+
+      // Derive thumbnail key
+      let thumbnailKey: string | undefined
+      if (photo.storageKey) {
+        const lastSlash = photo.storageKey.lastIndexOf('/')
+        if (lastSlash >= 0) {
+          thumbnailKey = `${photo.storageKey.substring(0, lastSlash + 1)}thumb-${photo.storageKey.substring(lastSlash + 1)}`
+        } else {
+          thumbnailKey = `thumb-${photo.storageKey}`
+        }
+      }
+
+      const moveResult = await storage.move(
+        photo.storageKey || photo.url,
+        body.storagePath,
+        thumbnailKey
+      )
+
+      updateData.url = moveResult.newUrl
+      updateData.storageKey = moveResult.newKey
+      if (moveResult.newThumbnailUrl) {
+        updateData.thumbnailUrl = moveResult.newThumbnailUrl
+      }
+    }
+
     // Handle category update
     if (body.category !== undefined) {
       const categoriesArray = body.category
@@ -460,6 +494,7 @@ photos.patch('/admin/photos/:id', async (c) => {
       data: {
         ...photo,
         category: photo.categories.map((c) => c.name).join(','),
+        dominantColors: photo.dominantColors ? JSON.parse(photo.dominantColors) : null,
       },
     })
   } catch (error) {
@@ -598,6 +633,226 @@ photos.post('/admin/photos/batch-update-urls', async (c) => {
     })
   } catch (error) {
     console.error('Batch update URLs error:', error)
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+})
+
+// Reanalyze dominant colors for a photo
+photos.post('/admin/photos/:id/reanalyze-colors', async (c) => {
+  try {
+    const id = c.req.param('id')
+
+    const photo = await db.photo.findUnique({ where: { id } })
+    if (!photo) {
+      return c.json({ error: 'Photo not found' }, 404)
+    }
+
+    // Get storage config and download the image
+    const storageConfig = await getStorageConfig(photo.storageProvider)
+    const storage = StorageProviderFactory.create(storageConfig)
+    
+    const buffer = await storage.download(photo.storageKey || photo.url)
+    if (!buffer) {
+      return c.json({ error: 'Failed to download image' }, 500)
+    }
+
+    // Extract dominant colors
+    const dominantColors = await extractDominantColors(buffer)
+
+    // Update database
+    const updated = await db.photo.update({
+      where: { id },
+      data: {
+        dominantColors: dominantColors.length > 0 ? JSON.stringify(dominantColors) : null,
+      },
+      include: { categories: true },
+    })
+
+    return c.json({
+      success: true,
+      data: {
+        ...updated,
+        category: updated.categories.map((c) => c.name).join(','),
+        dominantColors,
+      },
+    })
+  } catch (error) {
+    console.error('Reanalyze colors error:', error)
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+})
+
+// Reupload missing file for existing photo record
+photos.post('/admin/photos/:id/reupload', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const missingType = c.req.query('type') as 'original' | 'thumbnail' | 'both' | undefined
+
+    const photo = await db.photo.findUnique({
+      where: { id },
+      include: { categories: true },
+    })
+    if (!photo) {
+      return c.json({ error: 'Photo not found' }, 404)
+    }
+
+    const formData = await c.req.formData()
+    const file = formData.get('file') as File
+    if (!file) {
+      return c.json({ error: 'File is required' }, 400)
+    }
+
+    const arrayBuffer = await file.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+
+    const storageConfig = await getStorageConfig(photo.storageProvider)
+    const storage = StorageProviderFactory.create(storageConfig)
+    storage.validateConfig()
+
+    const storageKey = photo.storageKey || ''
+    const lastSlash = storageKey.lastIndexOf('/')
+    const storagePath = lastSlash >= 0 ? storageKey.substring(0, lastSlash) : ''
+    const filename = lastSlash >= 0 ? storageKey.substring(lastSlash + 1) : storageKey
+    const thumbnailFilename = `thumb-${filename}`
+
+    const uploadOriginal = !missingType || missingType === 'original' || missingType === 'both'
+    const uploadThumb = !missingType || missingType === 'thumbnail' || missingType === 'both'
+
+    let exifData = null
+    let metadata = null
+    let thumbnailBuffer = null
+    let dominantColors: string[] = []
+
+    if (uploadOriginal) {
+      [exifData, { metadata, thumbnailBuffer }] = await Promise.all([
+        extractExifData(buffer),
+        (async () => {
+          const sharpInstance = sharp(buffer)
+          const [meta, thumb] = await Promise.all([
+            sharpInstance.metadata(),
+            uploadThumb ? sharp(buffer).rotate().resize(800, 800, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer() : null,
+          ])
+          return { metadata: meta, thumbnailBuffer: thumb }
+        })(),
+      ])
+      dominantColors = await extractDominantColors(buffer)
+    } else if (uploadThumb) {
+      thumbnailBuffer = await sharp(buffer).rotate().resize(800, 800, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer()
+    }
+
+    let uploadResult
+    if (uploadOriginal && uploadThumb && thumbnailBuffer) {
+      uploadResult = await storage.upload(
+        { buffer, filename, path: storagePath, contentType: file.type },
+        { buffer: thumbnailBuffer, filename: thumbnailFilename, path: storagePath, contentType: 'image/jpeg' }
+      )
+    } else if (uploadOriginal) {
+      uploadResult = await storage.upload({ buffer, filename, path: storagePath, contentType: file.type })
+    } else if (uploadThumb && thumbnailBuffer) {
+      uploadResult = await storage.upload({ buffer: thumbnailBuffer, filename: thumbnailFilename, path: storagePath, contentType: 'image/jpeg' })
+    }
+
+    const updateData: Record<string, unknown> = {}
+    if (uploadOriginal && uploadResult) {
+      updateData.url = uploadResult.url
+      updateData.storageKey = uploadResult.key
+      updateData.width = metadata?.width || photo.width
+      updateData.height = metadata?.height || photo.height
+      updateData.size = buffer.length
+      if (dominantColors.length > 0) updateData.dominantColors = JSON.stringify(dominantColors)
+      if (exifData) {
+        updateData.cameraMake = exifData.cameraMake
+        updateData.cameraModel = exifData.cameraModel
+        updateData.lens = exifData.lens
+        updateData.focalLength = exifData.focalLength
+        updateData.aperture = exifData.aperture
+        updateData.shutterSpeed = exifData.shutterSpeed
+        updateData.iso = exifData.iso
+        updateData.takenAt = exifData.takenAt
+        updateData.latitude = exifData.latitude
+        updateData.longitude = exifData.longitude
+        updateData.orientation = exifData.orientation
+        updateData.software = exifData.software
+        updateData.exifRaw = exifData.exifRaw
+      }
+    }
+    if (uploadThumb && uploadResult?.thumbnailUrl) {
+      updateData.thumbnailUrl = uploadResult.thumbnailUrl
+    } else if (uploadThumb && !uploadOriginal && uploadResult) {
+      updateData.thumbnailUrl = uploadResult.url
+    }
+
+    const updated = await db.photo.update({
+      where: { id },
+      data: updateData,
+      include: { categories: true },
+    })
+
+    return c.json({
+      success: true,
+      data: {
+        ...updated,
+        category: updated.categories.map((c) => c.name).join(','),
+        dominantColors: updated.dominantColors ? JSON.parse(updated.dominantColors) : null,
+      },
+    })
+  } catch (error) {
+    console.error('Reupload photo error:', error)
+    if (error instanceof StorageError) {
+      return c.json({ error: error.message }, 400)
+    }
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+})
+
+// Generate thumbnail for existing photo
+photos.post('/admin/photos/:id/generate-thumbnail', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const photo = await db.photo.findUnique({ where: { id } })
+    if (!photo) return c.json({ error: 'Photo not found' }, 404)
+
+    const storageConfig = await getStorageConfig(photo.storageProvider)
+    const storage = StorageProviderFactory.create(storageConfig)
+
+    const buffer = await storage.download(photo.storageKey || photo.url)
+    if (!buffer) return c.json({ error: 'Failed to download image' }, 500)
+
+    const thumbnailBuffer = await sharp(buffer)
+      .rotate()
+      .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer()
+
+    const storageKey = photo.storageKey || ''
+    const lastSlash = storageKey.lastIndexOf('/')
+    const storagePath = lastSlash >= 0 ? storageKey.substring(0, lastSlash) : ''
+    const filename = lastSlash >= 0 ? storageKey.substring(lastSlash + 1) : storageKey
+    const thumbnailFilename = `thumb-${filename}`
+
+    const uploadResult = await storage.upload({
+      buffer: thumbnailBuffer,
+      filename: thumbnailFilename,
+      path: storagePath,
+      contentType: 'image/jpeg',
+    })
+
+    const updated = await db.photo.update({
+      where: { id },
+      data: { thumbnailUrl: uploadResult.url },
+      include: { categories: true },
+    })
+
+    return c.json({
+      success: true,
+      data: {
+        ...updated,
+        category: updated.categories.map((c) => c.name).join(','),
+        dominantColors: updated.dominantColors ? JSON.parse(updated.dominantColors) : null,
+      },
+    })
+  } catch (error) {
+    console.error('Generate thumbnail error:', error)
     return c.json({ error: 'Internal server error' }, 500)
   }
 })

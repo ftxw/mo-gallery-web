@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { motion } from 'framer-motion'
+import { compressImage } from '@/lib/image-compress'
+import ExifReader from 'exifreader'
 import {
   BookOpen,
   Plus,
@@ -11,17 +12,14 @@ import {
   Edit3,
   Trash2,
   ChevronLeft,
-  ChevronRight,
   Save,
   Eye,
   EyeOff,
   Image as ImageIcon,
-  X,
-  GripVertical,
   Loader2,
   Calendar,
   Clock,
-  MousePointer2,
+  Check,
 } from 'lucide-react'
 import {
   getAdminStories,
@@ -29,17 +27,24 @@ import {
   updateStory,
   deleteStory,
   addPhotosToStory,
-  removePhotoFromStory,
   reorderStoryPhotos,
   getPhotos,
-  resolveAssetUrl,
+  uploadPhotoWithProgress,
+  addPhotosToAlbum,
   type StoryDto,
   type PhotoDto,
 } from '@/lib/api'
 import { CustomInput } from '@/components/ui/CustomInput'
+import { CustomSelect, type SelectOption } from '@/components/ui/CustomSelect'
 import { useSettings } from '@/contexts/SettingsContext'
 import { PhotoSelectorModal } from '@/components/admin/PhotoSelectorModal'
+import { ImageUploadSettingsModal, type UploadSettings } from '@/components/admin/ImageUploadSettingsModal'
+import { SimpleDeleteDialog } from '@/components/admin/SimpleDeleteDialog'
+import { DraftRestoreDialog } from '@/components/admin/DraftRestoreDialog'
+import { StoryPreviewModal } from '@/components/admin/StoryPreviewModal'
+import { StoryPhotoPanel, type PendingImage } from '@/components/admin/StoryPhotoPanel'
 import type { MilkdownEditorHandle } from '@/components/MilkdownEditor'
+import { saveStoryEditorDraftToDB, getStoryEditorDraftFromDB, clearStoryEditorDraftFromDB, type StoryEditorDraftData } from '@/lib/client-db'
 
 // Dynamically import MilkdownEditor to avoid SSR issues
 const MilkdownEditor = dynamic(
@@ -54,29 +59,17 @@ const MilkdownEditor = dynamic(
   }
 )
 
-// Dynamically import MilkdownViewer for preview
-const MilkdownViewer = dynamic(
-  () => import('@/components/MilkdownViewer'),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="animate-pulse space-y-4">
-        <div className="h-4 bg-muted rounded w-full"></div>
-        <div className="h-4 bg-muted rounded w-5/6"></div>
-        <div className="h-4 bg-muted rounded w-4/6"></div>
-      </div>
-    )
-  }
-)
-
 interface StoriesTabProps {
   token: string | null
   t: (key: string) => string
   notify: (message: string, type?: 'success' | 'error' | 'info') => void
   editStoryId?: string
+  editFromDraft?: StoryEditorDraftData | null
+  onDraftConsumed?: () => void
+  refreshKey?: number
 }
 
-export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
+export function StoriesTab({ token, t, notify, editStoryId, editFromDraft, onDraftConsumed, refreshKey }: StoriesTabProps) {
   const { settings } = useSettings()
   const [stories, setStories] = useState<StoryDto[]>([])
   const [loading, setLoading] = useState(true)
@@ -89,17 +82,83 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
   const [allPhotos, setAllPhotos] = useState<PhotoDto[]>([])
   const [showPhotoSelector, setShowPhotoSelector] = useState(false)
   
-  // Drag and drop state
-  const [draggedPhotoId, setDraggedPhotoId] = useState<string | null>(null)
-  const [dragOverPhotoId, setDragOverPhotoId] = useState<string | null>(null)
+  // Drag and drop state (supports both photos and pending images)
+  const [draggedItemId, setDraggedItemId] = useState<string | null>(null)
+  const [draggedItemType, setDraggedItemType] = useState<'photo' | 'pending' | null>(null)
+  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null)
+  
+  // Photo/pending menu state
+  const [openMenuPhotoId, setOpenMenuPhotoId] = useState<string | null>(null)
+  const [openMenuPendingId, setOpenMenuPendingId] = useState<string | null>(null)
+  
+  // Pending cover state (for pending images before upload)
+  const [pendingCoverId, setPendingCoverId] = useState<string | null>(null)
   
   // Preview modal state
   const [showPreview, setShowPreview] = useState(false)
   const [previewPhotoIndex, setPreviewPhotoIndex] = useState<number | null>(null)
+  
+  // Pending images for deferred upload
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
+  const [showUploadSettings, setShowUploadSettings] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, currentFile: '' })
+  const [isDraggingOver, setIsDraggingOver] = useState(false)
+  
+  // Draft auto-save state
+  const [draftSaved, setDraftSaved] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const AUTO_SAVE_DELAY = 2000
+  
+  // Track initial state for dirty checking
+  const [isDirty, setIsDirty] = useState(false)
+  const initialStoryRef = useRef<{
+    title: string
+    content: string
+    isPublished: boolean
+    createdAt: string
+    photoIds: string[]
+    coverPhotoId?: string
+  } | null>(null)
+  
+  // Delete dialog state
+  const [deleteStoryId, setDeleteStoryId] = useState<string | null>(null)
+  
+  // Status filter state
+  const [statusFilter, setStatusFilter] = useState('')
+  
+  // Custom date toggle state
+  const [useCustomDate, setUseCustomDate] = useState(false)
+  
+  // Draft restore dialog state
+  const [draftRestoreDialog, setDraftRestoreDialog] = useState<{
+    isOpen: boolean
+    draft: StoryEditorDraftData | null
+    story: StoryDto | null
+  }>({ isOpen: false, draft: null, story: null })
 
+  const initialLoadRef = useRef(false)
+  
   useEffect(() => {
-    loadStories()
+    if (!initialLoadRef.current) {
+      loadStories()
+      initialLoadRef.current = true
+    }
   }, [token])
+  
+  // Refresh when refreshKey changes - also reset to list mode
+  useEffect(() => {
+    if (refreshKey && refreshKey > 0) {
+      loadStories()
+      setStoryEditMode('list')
+      setCurrentStory(null)
+      setPendingImages([])
+      initialStoryRef.current = null
+      setIsDirty(false)
+      setUseCustomDate(false)
+    }
+  }, [refreshKey])
 
   // Handle editStoryId - auto-open editor for the specified story
   useEffect(() => {
@@ -112,12 +171,202 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
     }
   }, [editStoryId, stories])
 
+  // Handle editFromDraft - open editor with draft data (no database call)
+  useEffect(() => {
+    if (editFromDraft && allPhotos.length > 0) {
+      const restoredPhotos = editFromDraft.photoIds
+        .map(id => allPhotos.find(p => p.id === id))
+        .filter((p): p is PhotoDto => !!p)
+      
+      setCurrentStory({
+        id: editFromDraft.storyId || crypto.randomUUID(),
+        title: editFromDraft.title,
+        content: editFromDraft.content,
+        isPublished: editFromDraft.isPublished,
+        createdAt: editFromDraft.createdAt,
+        updatedAt: new Date().toISOString(),
+        coverPhotoId: editFromDraft.coverPhotoId ?? undefined,
+        photos: restoredPhotos,
+      })
+      
+      if (editFromDraft.files?.length > 0) {
+        const restoredPending = editFromDraft.files.map(f => ({
+          id: f.id,
+          file: f.file,
+          previewUrl: URL.createObjectURL(f.file),
+          status: 'pending' as const,
+          progress: 0,
+          takenAt: f.takenAt
+        }))
+        setPendingImages(restoredPending)
+      }
+      
+      // Restore pendingCoverId from draft
+      if (editFromDraft.pendingCoverId) {
+        setPendingCoverId(editFromDraft.pendingCoverId)
+      }
+      
+      setLastSavedAt(editFromDraft.savedAt)
+      setStoryEditMode('editor')
+      notify(t('admin.restored_from_draft') || '已从草稿恢复', 'info')
+      onDraftConsumed?.()
+    }
+  }, [editFromDraft, allPhotos, onDraftConsumed])
+
+  // Load photos first when editFromDraft is provided
+  useEffect(() => {
+    if (editFromDraft && allPhotos.length === 0) {
+      loadAllPhotos()
+    }
+  }, [editFromDraft])
+
   // Load all photos when entering editor mode
   useEffect(() => {
     if (storyEditMode === 'editor' && allPhotos.length === 0) {
       loadAllPhotos()
     }
   }, [storyEditMode])
+
+  // Note: Draft loading is now handled in handleEditStory and handleCreateStory
+  // to allow user to choose whether to restore draft
+
+  // Check if content has changed (dirty check)
+  useEffect(() => {
+    if (storyEditMode !== 'editor' || !currentStory || !initialStoryRef.current) {
+      setIsDirty(false)
+      return
+    }
+    
+    const initial = initialStoryRef.current
+    const currentPhotoIds = currentStory.photos?.map(p => p.id) || []
+    
+    const hasChanged =
+      currentStory.title !== initial.title ||
+      currentStory.content !== initial.content ||
+      currentStory.isPublished !== initial.isPublished ||
+      currentStory.createdAt !== initial.createdAt ||
+      currentStory.coverPhotoId !== initial.coverPhotoId ||
+      JSON.stringify(currentPhotoIds) !== JSON.stringify(initial.photoIds) ||
+      pendingImages.length > 0 ||
+      pendingCoverId !== null
+    
+    setIsDirty(hasChanged)
+  }, [storyEditMode, currentStory?.title, currentStory?.content, currentStory?.isPublished, currentStory?.createdAt, currentStory?.coverPhotoId, currentStory?.photos, pendingImages, pendingCoverId])
+
+  // Auto-save draft when story data changes (only if dirty)
+  useEffect(() => {
+    if (storyEditMode !== 'editor' || !currentStory || !isDirty) return
+    if (!currentStory.title && !currentStory.content && pendingImages.length === 0) return
+
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
+    autoSaveTimerRef.current = setTimeout(() => saveDraft(), AUTO_SAVE_DELAY)
+
+    return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current) }
+  }, [currentStory?.title, currentStory?.content, currentStory?.isPublished, currentStory?.createdAt, currentStory?.coverPhotoId, currentStory?.photos, pendingImages, pendingCoverId, isDirty])
+
+  // Apply draft to current story
+  const applyDraft = useCallback((draft: StoryEditorDraftData, baseStory: StoryDto) => {
+    // Use draft photoIds directly - if empty, it means user deleted all photos
+    const restoredPhotos = draft.photoIds
+      .map(id => allPhotos.find(p => p.id === id) || baseStory.photos?.find(p => p.id === id))
+      .filter((p): p is PhotoDto => !!p)
+    
+    setCurrentStory({
+      ...baseStory,
+      title: draft.title || baseStory.title,
+      content: draft.content || baseStory.content,
+      isPublished: draft.isPublished,
+      createdAt: draft.createdAt || baseStory.createdAt,
+      coverPhotoId: draft.coverPhotoId ?? baseStory.coverPhotoId,
+      photos: restoredPhotos,
+    })
+    
+    if (draft.files?.length > 0) {
+      const restoredPending = draft.files.map(f => ({
+        id: f.id,
+        file: f.file,
+        previewUrl: URL.createObjectURL(f.file),
+        status: 'pending' as const,
+        progress: 0,
+        takenAt: f.takenAt
+      }))
+      setPendingImages(restoredPending)
+    }
+    
+    // Restore pendingCoverId from draft
+    if (draft.pendingCoverId) {
+      setPendingCoverId(draft.pendingCoverId)
+    }
+    
+    setLastSavedAt(draft.savedAt)
+    // Update initial ref to match restored draft (so it's not considered dirty)
+    initialStoryRef.current = {
+      title: draft.title || baseStory.title,
+      content: draft.content || baseStory.content,
+      isPublished: draft.isPublished,
+      createdAt: draft.createdAt || baseStory.createdAt,
+      photoIds: draft.photoIds,
+      coverPhotoId: draft.coverPhotoId ?? baseStory.coverPhotoId,
+    }
+    notify(t('admin.restored_from_draft'), 'info')
+  }, [allPhotos, notify, t])
+
+  // Handle draft restore dialog confirm
+  const handleDraftRestore = useCallback(() => {
+    if (draftRestoreDialog.draft && draftRestoreDialog.story) {
+      applyDraft(draftRestoreDialog.draft, draftRestoreDialog.story)
+    }
+    setDraftRestoreDialog({ isOpen: false, draft: null, story: null })
+    setStoryEditMode('editor')
+  }, [draftRestoreDialog, applyDraft])
+
+  // Handle draft restore dialog discard
+  const handleDraftDiscard = useCallback(() => {
+    if (draftRestoreDialog.story) {
+      setCurrentStory({ ...draftRestoreDialog.story })
+    }
+    setDraftRestoreDialog({ isOpen: false, draft: null, story: null })
+    setStoryEditMode('editor')
+  }, [draftRestoreDialog])
+
+  // Handle draft restore dialog cancel (close without action)
+  const handleDraftCancel = useCallback(() => {
+    setDraftRestoreDialog({ isOpen: false, draft: null, story: null })
+    setCurrentStory(null)
+  }, [])
+
+  const saveDraft = useCallback(async () => {
+    if (!currentStory) return
+    const existingStory = stories.find(s => s.id === currentStory.id)
+    
+    try {
+      await saveStoryEditorDraftToDB({
+        storyId: existingStory ? currentStory.id : undefined,
+        title: currentStory.title,
+        content: currentStory.content,
+        isPublished: currentStory.isPublished,
+        createdAt: currentStory.createdAt,
+        coverPhotoId: currentStory.coverPhotoId,
+        pendingCoverId: pendingCoverId,
+        photoIds: currentStory.photos?.map(p => p.id) || [],
+        files: pendingImages.map(p => ({ id: p.id, file: p.file, takenAt: p.takenAt }))
+      })
+      setLastSavedAt(Date.now())
+      setDraftSaved(true)
+      setTimeout(() => setDraftSaved(false), 2000)
+    } catch (e) {
+      console.error('Failed to save draft:', e)
+    }
+  }, [currentStory, stories, pendingImages, pendingCoverId])
+
+  const clearDraft = useCallback(async (storyId?: string) => {
+    try {
+      await clearStoryEditorDraftFromDB(storyId)
+      setLastSavedAt(null)
+    } catch (e) {
+      console.error('Failed to clear draft:', e)
+    }
+  }, [])
 
   async function loadStories() {
     if (!token) return
@@ -142,8 +391,8 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
     }
   }
 
-  function handleCreateStory() {
-    setCurrentStory({
+  async function handleCreateStory() {
+    const newStory: StoryDto = {
       id: crypto.randomUUID(),
       title: '',
       content: '',
@@ -151,27 +400,124 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       photos: [],
-    })
+    }
+    
+    // Set initial state for dirty checking
+    initialStoryRef.current = {
+      title: '',
+      content: '',
+      isPublished: false,
+      createdAt: newStory.createdAt,
+      photoIds: [],
+      coverPhotoId: undefined,
+    }
+    
+    // Check for existing draft for new story
+    try {
+      const draft = await getStoryEditorDraftFromDB(undefined)
+      if (draft && draft.savedAt && (draft.title || draft.content || (draft.files && draft.files.length > 0))) {
+        // Show dialog to ask user
+        setCurrentStory(newStory)
+        setDraftRestoreDialog({ isOpen: true, draft, story: newStory })
+        return
+      }
+    } catch (e) {
+      console.error('Failed to check draft:', e)
+    }
+    
+    setCurrentStory(newStory)
     setStoryEditMode('editor')
   }
 
-  function handleEditStory(story: StoryDto) {
+  async function handleEditStory(story: StoryDto) {
+    // Set initial state for dirty checking
+    initialStoryRef.current = {
+      title: story.title,
+      content: story.content,
+      isPublished: story.isPublished,
+      createdAt: story.createdAt,
+      photoIds: story.photos?.map(p => p.id) || [],
+      coverPhotoId: story.coverPhotoId,
+    }
+    
+    // Check for existing draft for this story
+    try {
+      const draft = await getStoryEditorDraftFromDB(story.id)
+      if (draft && draft.savedAt && draft.savedAt > new Date(story.updatedAt).getTime()) {
+        // Draft is newer than saved version, show dialog
+        setCurrentStory({ ...story })
+        setDraftRestoreDialog({ isOpen: true, draft, story })
+        return
+      }
+    } catch (e) {
+      console.error('Failed to check draft:', e)
+    }
+    
     setCurrentStory({ ...story })
     setStoryEditMode('editor')
   }
 
-  async function handleDeleteStory(id: string) {
-    if (!token) return
-    if (!window.confirm(t('common.confirm') + '?')) return
-
+  async function confirmDeleteStory() {
+    if (!token || !deleteStoryId) return
     try {
-      await deleteStory(token, id)
+      await deleteStory(token, deleteStoryId)
       notify(t('story.deleted'), 'success')
       await loadStories()
     } catch (err) {
       console.error('Failed to delete story:', err)
       notify(t('story.delete_failed'), 'error')
+    } finally {
+      setDeleteStoryId(null)
     }
+  }
+
+  function handlePhotoPanelDragOver(e: React.DragEvent) {
+    e.preventDefault()
+    setIsDraggingOver(true)
+  }
+
+  function handlePhotoPanelDragLeave(e: React.DragEvent) {
+    e.preventDefault()
+    setIsDraggingOver(false)
+  }
+
+  async function handlePhotoPanelDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setIsDraggingOver(false)
+    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'))
+    if (files.length === 0) return
+    
+    const newPending: PendingImage[] = await Promise.all(files.map(async file => {
+      let takenAt: string | undefined
+      try {
+        const tags = await ExifReader.load(file)
+        const dateTime = tags['DateTimeOriginal'] || tags['DateTime']
+        if (dateTime?.description) {
+          const match = dateTime.description.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/)
+          if (match) {
+            const [, year, month, day, hour, minute, second] = match
+            takenAt = `${year}-${month}-${day}T${hour}:${minute}:${second}.000Z`
+          }
+        }
+      } catch {}
+      return {
+        id: crypto.randomUUID(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+        status: 'pending' as const,
+        progress: 0,
+        takenAt
+      }
+    }))
+    setPendingImages(prev => [...prev, ...newPending])
+  }
+
+  function handleRemovePendingImage(id: string) {
+    setPendingImages(prev => {
+      const item = prev.find(p => p.id === id)
+      if (item) URL.revokeObjectURL(item.previewUrl)
+      return prev.filter(p => p.id !== id)
+    })
   }
 
   async function handleSaveStory() {
@@ -180,28 +526,54 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
       notify(t('story.fill_title_content'), 'error')
       return
     }
+    const pendingToUpload = pendingImages.filter(p => p.status === 'pending' || p.status === 'failed')
+    if (pendingToUpload.length > 0) {
+      setShowUploadSettings(true)
+      return
+    }
+    await doSaveStory()
+  }
 
+  async function doSaveStory() {
+    if (!token || !currentStory) return
     try {
       setSaving(true)
       const isNew = !stories.find((s) => s.id === currentStory.id)
-
+      const photoIds = currentStory.photos?.map(p => p.id) || []
+      
       if (isNew) {
         await createStory(token, {
           title: currentStory.title,
           content: currentStory.content,
           isPublished: currentStory.isPublished,
-          photoIds: currentStory.photos?.map(p => p.id) || [],
+          photoIds,
+          coverPhotoId: currentStory.coverPhotoId,
+          // Only pass createdAt if custom date is enabled
+          ...(useCustomDate && currentStory.createdAt ? { createdAt: currentStory.createdAt } : {}),
         })
         notify(t('story.created'), 'success')
       } else {
+        // Update story and sync photo order
         await updateStory(token, currentStory.id, {
           title: currentStory.title,
           content: currentStory.content,
           isPublished: currentStory.isPublished,
+          coverPhotoId: currentStory.coverPhotoId ?? null,
+          // Only pass createdAt if custom date is enabled
+          ...(useCustomDate ? { createdAt: currentStory.createdAt } : {}),
         })
+        // Sync photo order with server
+        if (photoIds.length > 0) {
+          await reorderStoryPhotos(token, currentStory.id, photoIds)
+        }
         notify(t('story.updated'), 'success')
       }
-
+      // Clear draft after successful save
+      const isNewStory = !stories.find((s) => s.id === currentStory.id)
+      await clearDraft(isNewStory ? undefined : currentStory.id)
+      
+      pendingImages.forEach(p => URL.revokeObjectURL(p.previewUrl))
+      setPendingImages([])
       setStoryEditMode('list')
       setCurrentStory(null)
       await loadStories()
@@ -211,6 +583,74 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
     } finally {
       setSaving(false)
     }
+  }
+
+  async function handleConfirmUpload(settings: UploadSettings) {
+    if (!token || !currentStory) return
+    setShowUploadSettings(false)
+    setIsUploading(true)
+    const toUpload = pendingImages.filter(p => p.status === 'pending' || p.status === 'failed')
+    setUploadProgress({ current: 0, total: toUpload.length, currentFile: '' })
+    const uploadedPhotoIds: string[] = []
+    const uploadedPhotos: PhotoDto[] = []
+    
+    for (let i = 0; i < toUpload.length; i++) {
+      const pending = toUpload[i]
+      setUploadProgress({ current: i + 1, total: toUpload.length, currentFile: pending.file.name })
+      setPendingImages(prev => prev.map(p => p.id === pending.id ? { ...p, status: 'uploading' as const, progress: 0 } : p))
+      try {
+        const fileToUpload = settings.maxSizeMB
+          ? await compressImage(pending.file, { maxSizeMB: settings.maxSizeMB, maxWidthOrHeight: 4096 })
+          : pending.file
+        const photo = await uploadPhotoWithProgress({
+          token,
+          file: fileToUpload,
+          title: pending.file.name.replace(/\.[^/.]+$/, ''),
+          category: settings.category,
+          storage_provider: settings.storageProvider,
+          onProgress: (progress) => setPendingImages(prev => prev.map(p => p.id === pending.id ? { ...p, progress } : p))
+        })
+        uploadedPhotoIds.push(photo.id)
+        uploadedPhotos.push(photo)
+        setPendingImages(prev => prev.map(p => p.id === pending.id ? { ...p, status: 'success' as const, progress: 100, photoId: photo.id } : p))
+      } catch (err) {
+        setPendingImages(prev => prev.map(p => p.id === pending.id ? { ...p, status: 'failed' as const, error: err instanceof Error ? err.message : 'Upload failed' } : p))
+      }
+    }
+    
+    if (settings.albumId && uploadedPhotoIds.length > 0) {
+      try { await addPhotosToAlbum(token, settings.albumId, uploadedPhotoIds) } catch {}
+    }
+    
+    if (uploadedPhotos.length > 0) {
+      const isNew = !stories.find((s) => s.id === currentStory.id)
+      if (isNew) {
+        setCurrentStory(prev => ({ ...prev!, photos: [...(prev?.photos || []), ...uploadedPhotos] }))
+      } else {
+        try {
+          await addPhotosToStory(token, currentStory.id, uploadedPhotoIds)
+          setCurrentStory(prev => ({ ...prev!, photos: [...(prev?.photos || []), ...uploadedPhotos] }))
+        } catch {}
+      }
+    }
+    
+    setPendingImages(prev => {
+      prev.filter(p => p.status === 'success').forEach(p => URL.revokeObjectURL(p.previewUrl))
+      return prev.filter(p => p.status !== 'success')
+    })
+    setIsUploading(false)
+    
+    const failedCount = pendingImages.filter(p => p.status === 'failed').length
+    if (failedCount === 0) {
+      await doSaveStory()
+    } else {
+      notify(t('admin.some_uploads_failed') || `${failedCount} 张图片上传失败`, 'error')
+    }
+  }
+
+  function handleRetryFailedUploads() {
+    setPendingImages(prev => prev.map(p => p.status === 'failed' ? { ...p, status: 'pending' as const, error: undefined, progress: 0 } : p))
+    setShowUploadSettings(true)
   }
 
   async function handleTogglePublish(story: StoryDto) {
@@ -228,199 +668,104 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
     }
   }
 
-  async function handleUpdatePhotos(selectedPhotoIds: string[]) {
-    if (!token || !currentStory) return
-    
-    const isNew = !stories.find((s) => s.id === currentStory.id)
+  function handleUpdatePhotos(selectedPhotoIds: string[]) {
+    if (!currentStory) return
     
     // Get the photos in the selected order
     const selectedPhotos = selectedPhotoIds
       .map(id => allPhotos.find(p => p.id === id))
       .filter((p): p is PhotoDto => p !== undefined)
     
-    if (isNew) {
-      // For new stories, just update local state with the new selection
-      setCurrentStory(prev => ({
-        ...prev!,
-        photos: selectedPhotos
-      }))
-    } else {
-      // For existing stories, we need to sync with the server
-      const currentPhotoIds = currentStory.photos?.map(p => p.id) || []
-      const photosToAdd = selectedPhotoIds.filter(id => !currentPhotoIds.includes(id))
-      const photosToRemove = currentPhotoIds.filter(id => !selectedPhotoIds.includes(id))
-      
-      try {
-        // Remove photos that are no longer selected
-        for (const photoId of photosToRemove) {
-          await removePhotoFromStory(token, currentStory.id, photoId)
-        }
-        
-        // Add new photos
-        if (photosToAdd.length > 0) {
-          await addPhotosToStory(token, currentStory.id, photosToAdd)
-        }
-        
-        // Reorder if needed
-        if (selectedPhotoIds.length > 0) {
-          await reorderStoryPhotos(token, currentStory.id, selectedPhotoIds)
-        }
-        
-        // Update local state
-        setCurrentStory(prev => ({
-          ...prev!,
-          photos: selectedPhotos
-        }))
-        
-        notify(t('admin.photos_updated'), 'success')
-      } catch (err) {
-        console.error('Failed to update photos:', err)
-        notify(t('common.error'), 'error')
-      }
-    }
+    // Always update local state only - save to server when clicking Save button
+    setCurrentStory(prev => ({
+      ...prev!,
+      photos: selectedPhotos
+    }))
     
     setShowPhotoSelector(false)
   }
 
-  async function handleRemovePhoto(photoId: string) {
-    if (!token || !currentStory) return
-    
-    const isNew = !stories.find((s) => s.id === currentStory.id)
-    
-    if (isNew) {
-      // For new stories, just remove from local state
-      setCurrentStory(prev => ({
-        ...prev!,
-        photos: prev?.photos?.filter(p => p.id !== photoId) || []
-      }))
-    } else {
-      // For existing stories, call API
-      try {
-        const updated = await removePhotoFromStory(token, currentStory.id, photoId)
-        setCurrentStory(updated)
-        notify(t('admin.photo_removed'), 'success')
-      } catch (err) {
-        console.error('Failed to remove photo:', err)
-        notify(t('common.error'), 'error')
-      }
-    }
-  }
-
-  async function handleSetCover(photoId: string) {
-    if (!token || !currentStory) return
-    
-    const isNew = !stories.find((s) => s.id === currentStory.id)
-    
-    if (isNew) {
-      setCurrentStory(prev => ({
-        ...prev!,
-        coverPhotoId: photoId
-      }))
-    } else {
-      try {
-        const updated = await updateStory(token, currentStory.id, { coverPhotoId: photoId })
-        setCurrentStory(updated)
-        notify(t('admin.cover_set'), 'success')
-      } catch (err) {
-        console.error('Failed to set cover:', err)
-        notify(t('common.error'), 'error')
-      }
-    }
-  }
-
-  // Drag and drop handlers
-  function handleDragStart(e: React.DragEvent, photoId: string) {
-    setDraggedPhotoId(photoId)
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', photoId)
-    // Add a slight delay to show the drag effect
-    setTimeout(() => {
-      const element = e.target as HTMLElement
-      element.style.opacity = '0.5'
-    }, 0)
-  }
-
-  function handleDragEnd(e: React.DragEvent) {
-    const element = e.target as HTMLElement
-    element.style.opacity = '1'
-    setDraggedPhotoId(null)
-    setDragOverPhotoId(null)
-  }
-
-  function handleDragOver(e: React.DragEvent, photoId: string) {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    if (photoId !== draggedPhotoId) {
-      setDragOverPhotoId(photoId)
-    }
-  }
-
-  function handleDragLeave() {
-    setDragOverPhotoId(null)
-  }
-
-  async function handleDrop(e: React.DragEvent, targetPhotoId: string) {
-    e.preventDefault()
-    setDragOverPhotoId(null)
-    
-    if (!currentStory?.photos || !draggedPhotoId || draggedPhotoId === targetPhotoId) {
-      return
-    }
-
-    const photos = [...currentStory.photos]
-    const draggedIndex = photos.findIndex(p => p.id === draggedPhotoId)
-    const targetIndex = photos.findIndex(p => p.id === targetPhotoId)
-
-    if (draggedIndex === -1 || targetIndex === -1) return
-
-    // Remove dragged item and insert at target position
-    const [draggedPhoto] = photos.splice(draggedIndex, 1)
-    photos.splice(targetIndex, 0, draggedPhoto)
-
-    // Update local state immediately for smooth UX
+  function handleRemovePhoto(photoId: string) {
+    if (!currentStory) return
     setCurrentStory(prev => ({
       ...prev!,
-      photos
+      photos: prev?.photos?.filter(p => p.id !== photoId) || []
     }))
-
-    // If it's an existing story, save the new order to the server
-    const isNew = !stories.find((s) => s.id === currentStory.id)
-    if (!isNew && token) {
-      try {
-        const photoIds = photos.map(p => p.id)
-        await reorderStoryPhotos(token, currentStory.id, photoIds)
-        notify(t('admin.photos_reordered'), 'success')
-      } catch (err) {
-        console.error('Failed to reorder photos:', err)
-        notify(t('common.error'), 'error')
-        // Revert on error
-        await loadStories()
-      }
-    }
   }
 
-  const handleContentChange = (content: string) => {
-    if (currentStory) {
-      setCurrentStory({ ...currentStory, content })
-    }
+  function handleSetCover(photoId: string) {
+    if (!currentStory) return
+    setCurrentStory(prev => ({
+      ...prev!,
+      coverPhotoId: photoId
+    }))
   }
+
+  // Unified drag handlers for photos and pending images
+  function handleItemDragStart(e: React.DragEvent, itemId: string, type: 'photo' | 'pending') {
+    setDraggedItemId(itemId)
+    setDraggedItemType(type)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', `${type}:${itemId}`)
+    setTimeout(() => { (e.target as HTMLElement).style.opacity = '0.5' }, 0)
+  }
+
+  function handleItemDragEnd(e: React.DragEvent) {
+    (e.target as HTMLElement).style.opacity = '1'
+    setDraggedItemId(null)
+    setDraggedItemType(null)
+    setDragOverItemId(null)
+  }
+
+  function handleItemDragOver(e: React.DragEvent, itemId: string) {
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    if (itemId !== draggedItemId) setDragOverItemId(itemId)
+  }
+
+  function handleItemDragLeave() {
+    setDragOverItemId(null)
+  }
+
+  // Build combined list for ordering: photos first, then pending
+  function getCombinedItems() {
+    const photoItems = (currentStory?.photos || []).map(p => ({ id: p.id, type: 'photo' as const }))
+    const pendingItems = pendingImages.map(p => ({ id: p.id, type: 'pending' as const }))
+    return [...photoItems, ...pendingItems]
+  }
+
+  function handleItemDrop(e: React.DragEvent, targetId: string, targetType: 'photo' | 'pending') {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOverItemId(null)
+    if (!draggedItemId || !draggedItemType || (draggedItemId === targetId && draggedItemType === targetType)) return
+
+    const combined = getCombinedItems()
+    const draggedIdx = combined.findIndex(i => i.id === draggedItemId && i.type === draggedItemType)
+    const targetIdx = combined.findIndex(i => i.id === targetId && i.type === targetType)
+    if (draggedIdx === -1 || targetIdx === -1) return
+
+    const [dragged] = combined.splice(draggedIdx, 1)
+    combined.splice(targetIdx, 0, dragged)
+
+    // Separate back into photos and pending - only update local state
+    const newPhotoIds = combined.filter(i => i.type === 'photo').map(i => i.id)
+    const newPendingIds = combined.filter(i => i.type === 'pending').map(i => i.id)
+
+    const reorderedPhotos = newPhotoIds.map(id => currentStory?.photos?.find(p => p.id === id)).filter((p): p is PhotoDto => !!p)
+    setCurrentStory(prev => prev ? { ...prev, photos: reorderedPhotos } : prev)
+
+    const reorderedPending = newPendingIds.map(id => pendingImages.find(p => p.id === id)).filter((p): p is PendingImage => !!p)
+    setPendingImages(reorderedPending)
+  }
+
+  const handleContentChange = useCallback((content: string) => {
+    setCurrentStory(prev => prev ? { ...prev, content } : prev)
+  }, [])
 
   // Get current photo IDs (for initial selection in modal)
   const currentPhotoIds = currentStory?.photos?.map(p => p.id) || []
-
-  // Preview helper functions
-  const getPhotoUrl = (photo: PhotoDto, thumbnail = false): string => {
-    const url = thumbnail ? (photo.thumbnailUrl || photo.url) : photo.url
-    return resolveAssetUrl(url, settings?.cdn_domain)
-  }
-
-  const getCoverPhoto = () => {
-    if (!currentStory) return null
-    if (currentStory.coverPhotoId) {
-      return currentStory.photos?.find(p => p.id === currentStory.coverPhotoId) || currentStory.photos?.[0]
-    }
-    return currentStory.photos?.[0]
-  }
 
   const handlePrevPhoto = () => {
     if (previewPhotoIndex === null || !currentStory?.photos) return
@@ -443,16 +788,31 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
     )
   }
 
+  // Status filter options for stories
+  const statusOptions: SelectOption[] = [
+    { value: '', label: t('admin.all_status') || '全部状态' },
+    { value: 'published', label: t('admin.published') || '已发布' },
+    { value: 'draft', label: t('admin.draft') || '草稿' },
+  ]
+
   return (
     <div className="h-full flex flex-col gap-6 overflow-hidden">
       {storyEditMode === 'list' ? (
         <div className="space-y-8 flex-1 flex flex-col overflow-hidden">
           <div className="flex items-center justify-between border-b border-border pb-4 flex-shrink-0">
             <div className="flex items-center gap-4">
-              <BookOpen className="w-6 h-6 text-primary" />
-              <h3 className="font-serif text-2xl uppercase tracking-tight">
-                {t('ui.photo_story')}
-              </h3>
+              <input
+                type="text"
+                placeholder={t('admin.search_placeholder') || '搜索...'}
+                className="px-3 py-2 text-sm bg-transparent border border-border rounded-md focus:border-primary outline-none w-48"
+              />
+              <CustomSelect
+                value={statusFilter}
+                options={statusOptions}
+                onChange={setStatusFilter}
+                placeholder={t('admin.all_status') || '全部状态'}
+                className="w-32"
+              />
             </div>
             <button
               onClick={handleCreateStory}
@@ -464,7 +824,14 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar">
             <div className="grid grid-cols-1 gap-4">
-              {stories.map((story) => (
+              {stories
+                .filter((story) => {
+                  if (!statusFilter) return true
+                  if (statusFilter === 'published') return story.isPublished
+                  if (statusFilter === 'draft') return !story.isPublished
+                  return true
+                })
+                .map((story) => (
                 <div
                   key={story.id}
                   className="flex items-center justify-between p-6 border border-border hover:border-primary transition-all group rounded-lg"
@@ -490,8 +857,12 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
                     </div>
                     <div className="flex items-center gap-4 text-[10px] text-muted-foreground font-mono uppercase">
                       <span className="flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />{' '}
+                        {new Date(story.createdAt).toLocaleDateString()}
+                      </span>
+                      <span className="flex items-center gap-1">
                         <History className="w-3 h-3" />{' '}
-                        {new Date(story.updatedAt).toLocaleDateString()}
+                        {new Date(story.updatedAt).toLocaleString()}
                       </span>
                       <span className="flex items-center gap-1">
                         <FileText className="w-3 h-3" /> {story.content.length}{' '}
@@ -531,7 +902,7 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
-                        handleDeleteStory(story.id)
+                        setDeleteStoryId(story.id)
                       }}
                       className="p-2 text-muted-foreground hover:text-destructive transition-colors rounded-md hover:bg-muted"
                     >
@@ -553,17 +924,36 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
         </div>
       ) : (
         <div className="flex-1 flex flex-col gap-4 overflow-hidden">
-          {/* Header - Back button and Save button */}
+          {/* Header - Back button, Draft status, and Save button */}
           <div className="flex items-center justify-between border-b border-border pb-4 flex-shrink-0">
-            <button
-              onClick={() => {
-                setStoryEditMode('list')
-                setCurrentStory(null)
-              }}
-              className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest hover:text-primary transition-colors"
-            >
-              <ChevronLeft className="w-4 h-4" /> {t('admin.back_list')}
-            </button>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => {
+                  setStoryEditMode('list')
+                  setCurrentStory(null)
+                  setPendingImages([])
+                  initialStoryRef.current = null
+                  setIsDirty(false)
+                  setUseCustomDate(false)
+                }}
+                className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest hover:text-primary transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" /> {t('admin.back_list')}
+              </button>
+              {/* Draft status indicator */}
+              {draftSaved && (
+                <span className="flex items-center gap-1 text-[10px] text-green-500">
+                  <Check className="w-3 h-3" />
+                  {t('story.draft_saved') || 'Saved'}
+                </span>
+              )}
+              {!draftSaved && lastSavedAt && (
+                <span className="flex items-center gap-1 text-[10px] text-muted-foreground/60">
+                  <Clock className="w-3 h-3" />
+                  {new Date(lastSavedAt).toLocaleTimeString()}
+                </span>
+              )}
+            </div>
             <button
               onClick={handleSaveStory}
               disabled={saving}
@@ -593,10 +983,10 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
                 className="text-xl md:text-2xl font-serif p-4 md:p-6"
               />
               
-              {/* Publish Checkbox, Character Count, and Preview Button */}
+              {/* Publish Checkbox, Date, Character Count, and Preview Button */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-2">
-                {/* Left: Publish Checkbox and Character Count */}
-                <div className="flex items-center gap-4">
+                {/* Left: Publish Checkbox, Date, and Character Count */}
+                <div className="flex flex-wrap items-center gap-4">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -613,6 +1003,38 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
                       {t('ui.publish_now')}
                     </span>
                   </label>
+                  {/* Custom Date Toggle */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setUseCustomDate(!useCustomDate)}
+                      className={`relative w-10 h-5 rounded-full transition-colors ${useCustomDate ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                      title={t('admin.custom_date')}
+                    >
+                      <span
+                        className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${useCustomDate ? 'left-5' : 'left-0.5'}`}
+                      />
+                    </button>
+                    <span className="text-xs text-muted-foreground font-bold uppercase tracking-widest">
+                      {t('admin.custom_date')}
+                    </span>
+                  </div>
+                  {useCustomDate && (
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                      <input
+                        type="datetime-local"
+                        value={currentStory?.createdAt ? new Date(currentStory.createdAt).toISOString().slice(0, 16) : ''}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          setCurrentStory((prev) => ({
+                            ...prev!,
+                            createdAt: value ? new Date(value).toISOString() : new Date().toISOString(),
+                          }))
+                        }}
+                        className="px-2 py-1 text-xs font-mono bg-transparent border border-border rounded focus:border-primary outline-none"
+                      />
+                    </div>
+                  )}
                   <span className="text-xs text-muted-foreground">
                     {currentStory?.content?.length || 0} {t('admin.characters')}
                   </span>
@@ -642,362 +1064,68 @@ export function StoriesTab({ token, t, notify, editStoryId }: StoriesTabProps) {
             </div>
 
             {/* Right: Photos Panel (30%) */}
-            <div className="flex-[3] flex flex-col border border-border rounded-lg bg-muted/20 overflow-hidden min-w-[320px]">
-              {/* Photos Header */}
-              <div className="flex items-center justify-between p-4 border-b border-border bg-background/50">
-                <div className="flex items-center gap-2">
-                  <ImageIcon className="w-4 h-4 text-primary" />
-                  <span className="text-xs font-bold uppercase tracking-widest">
-                    {t('story.related_photos')}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    ({currentStory?.photos?.length || 0})
-                  </span>
-                </div>
-                <button
-                  onClick={() => setShowPhotoSelector(true)}
-                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 rounded-md transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>{t('admin.add_photos')}</span>
-                </button>
-              </div>
-
-              {/* Photos Grid */}
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-                {currentStory?.photos && currentStory.photos.length > 0 ? (
-                  <div className="grid grid-cols-3 gap-2">
-                    {currentStory.photos.map((photo, index) => (
-                      <div
-                        key={photo.id}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, photo.id)}
-                        onDragEnd={handleDragEnd}
-                        onDragOver={(e) => handleDragOver(e, photo.id)}
-                        onDragLeave={handleDragLeave}
-                        onDrop={(e) => handleDrop(e, photo.id)}
-                        className={`relative group aspect-square rounded-lg overflow-hidden border-2 transition-all cursor-grab active:cursor-grabbing ${
-                          dragOverPhotoId === photo.id
-                            ? 'border-primary border-dashed scale-105 shadow-lg'
-                            : currentStory.coverPhotoId === photo.id
-                            ? 'border-primary'
-                            : 'border-transparent hover:border-border'
-                        } ${draggedPhotoId === photo.id ? 'opacity-50' : ''}`}
-                      >
-                        {/* Drag Handle Indicator */}
-                        <div className="absolute top-1 right-1 z-10 p-1 bg-black/40 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                          <GripVertical className="w-3 h-3 text-white" />
-                        </div>
-                        
-                        {/* Order Number */}
-                        <div className="absolute bottom-1 right-1 z-10 w-5 h-5 bg-black/60 rounded-full flex items-center justify-center">
-                          <span className="text-[10px] font-bold text-white">{index + 1}</span>
-                        </div>
-                        
-                        <img
-                          src={resolveAssetUrl(photo.thumbnailUrl || photo.url, settings?.cdn_domain)}
-                          alt={photo.title}
-                          className="w-full h-full object-cover pointer-events-none"
-                        />
-                        
-                        {/* Cover Badge */}
-                        {currentStory.coverPhotoId === photo.id && (
-                          <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-primary text-primary-foreground text-[8px] font-bold uppercase rounded">
-                            {t('admin.cover')}
-                          </div>
-                        )}
-                        
-                        {/* Hover Actions */}
-                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                          {currentStory.coverPhotoId !== photo.id && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleSetCover(photo.id)
-                              }}
-                              className="p-1.5 bg-white/20 hover:bg-white/40 text-white rounded text-[10px] font-medium"
-                              title={t('admin.set_as_cover')}
-                            >
-                              Cover
-                            </button>
-                          )}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleRemovePhoto(photo.id)
-                            }}
-                            className="p-1.5 bg-white/20 hover:bg-destructive text-white rounded"
-                            title={t('admin.remove')}
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-                    <ImageIcon className="w-12 h-12 mb-3 opacity-20" />
-                    <p className="text-xs text-center mb-3">
-                      {t('admin.no_photos_available')}
-                    </p>
-                    <button
-                      onClick={() => setShowPhotoSelector(true)}
-                      className="text-xs text-primary hover:underline"
-                    >
-                      {t('admin.add_photos')}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
+            <StoryPhotoPanel
+              currentStory={currentStory}
+              pendingImages={pendingImages}
+              pendingCoverId={pendingCoverId}
+              cdnDomain={settings?.cdn_domain}
+              isUploading={isUploading}
+              uploadProgress={uploadProgress}
+              isDraggingOver={isDraggingOver}
+              draggedItemId={draggedItemId}
+              draggedItemType={draggedItemType}
+              dragOverItemId={dragOverItemId}
+              openMenuPhotoId={openMenuPhotoId}
+              openMenuPendingId={openMenuPendingId}
+              t={t}
+              notify={notify}
+              onAddPhotos={() => setShowPhotoSelector(true)}
+              onRemovePhoto={handleRemovePhoto}
+              onRemovePendingImage={handleRemovePendingImage}
+              onSetCover={(photoId) => { handleSetCover(photoId); setPendingCoverId(null) }}
+              onSetPendingCover={(id) => { setPendingCoverId(id); setCurrentStory(prev => ({ ...prev!, coverPhotoId: undefined })) }}
+              onSetPhotoDate={(takenAt) => { setCurrentStory(prev => ({ ...prev!, createdAt: takenAt })); setUseCustomDate(true) }}
+              onRetryFailedUploads={handleRetryFailedUploads}
+              onPhotoPanelDragOver={handlePhotoPanelDragOver}
+              onPhotoPanelDragLeave={handlePhotoPanelDragLeave}
+              onPhotoPanelDrop={handlePhotoPanelDrop}
+              onItemDragStart={handleItemDragStart}
+              onItemDragEnd={handleItemDragEnd}
+              onItemDragOver={handleItemDragOver}
+              onItemDragLeave={handleItemDragLeave}
+              onItemDrop={handleItemDrop}
+              onOpenMenuPhoto={setOpenMenuPhotoId}
+              onOpenMenuPending={setOpenMenuPendingId}
+            />
           </div>
         </div>
       )}
 
-      {/* Photo Selector Modal */}
-      <PhotoSelectorModal
-        isOpen={showPhotoSelector}
-        onClose={() => setShowPhotoSelector(false)}
-        onConfirm={handleUpdatePhotos}
-        initialSelectedPhotoIds={currentPhotoIds}
+      <PhotoSelectorModal isOpen={showPhotoSelector} onClose={() => setShowPhotoSelector(false)} onConfirm={handleUpdatePhotos} initialSelectedPhotoIds={currentPhotoIds} t={t} />
+      <ImageUploadSettingsModal isOpen={showUploadSettings} onClose={() => setShowUploadSettings(false)} onConfirm={handleConfirmUpload} pendingCount={pendingImages.filter(p => p.status === 'pending' || p.status === 'failed').length} t={t} token={token} />
+      <SimpleDeleteDialog isOpen={!!deleteStoryId} onConfirm={confirmDeleteStory} onCancel={() => setDeleteStoryId(null)} t={t} />
+      <DraftRestoreDialog
+        isOpen={draftRestoreDialog.isOpen}
+        draftTime={draftRestoreDialog.draft?.savedAt || 0}
+        onRestore={handleDraftRestore}
+        onDiscard={handleDraftDiscard}
+        onCancel={handleDraftCancel}
         t={t}
       />
 
       {/* Preview Modal */}
       {showPreview && currentStory && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[100] bg-background overflow-y-auto"
-        >
-          {/* Close Button */}
-          <button
-            onClick={() => setShowPreview(false)}
-            className="fixed top-6 right-6 z-[110] p-3 bg-background/80 backdrop-blur-sm border border-border rounded-full text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-
-          {/* Hero Section */}
-          <section className="relative h-screen w-full overflow-hidden bg-black">
-            <div className="absolute inset-0">
-              {getCoverPhoto() ? (
-                <img
-                  src={getPhotoUrl(getCoverPhoto()!)}
-                  alt={currentStory.title}
-                  className="w-full h-full object-cover opacity-60"
-                />
-              ) : (
-                <div className="w-full h-full bg-muted/10" />
-              )}
-              <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-background" />
-            </div>
-
-            <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="flex items-center gap-3 mb-8"
-              >
-                <div className="h-px w-8 bg-primary/50" />
-                <span className="text-[10px] font-bold uppercase tracking-[0.5em] text-primary/80">Narrative</span>
-                <div className="h-px w-8 bg-primary/50" />
-              </motion.div>
-
-              <motion.h1
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4, duration: 0.8 }}
-                className="text-5xl md:text-7xl lg:text-8xl font-serif font-light tracking-tighter text-white leading-[0.9] max-w-5xl"
-              >
-                {currentStory.title || t('story.untitled')}
-              </motion.h1>
-
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.8 }}
-                className="mt-12 flex items-center gap-8 text-[10px] font-mono uppercase tracking-[0.3em] text-white/60"
-              >
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-3 h-3" />
-                  {new Date(currentStory.createdAt).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Clock className="w-3 h-3" />
-                  {Math.ceil((currentStory.content?.length || 0) / 500)} min read
-                </div>
-              </motion.div>
-            </div>
-
-            {/* Scroll Indicator */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 1.2, duration: 1 }}
-              className="absolute bottom-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-4"
-            >
-              <span className="text-[9px] font-bold uppercase tracking-[0.4em] text-white/40">Scroll</span>
-              <div className="w-px h-12 bg-gradient-to-b from-primary/50 to-transparent" />
-            </motion.div>
-          </section>
-
-          {/* Content Section */}
-          <div className="px-6 md:px-12 lg:px-24 py-24 md:py-40">
-            <div className="max-w-screen-md mx-auto">
-              {/* Intro Text / Meta */}
-              <div className="mb-20 space-y-6">
-                <div className="flex items-center gap-4 text-primary/40">
-                  <span className="text-xs font-mono">01</span>
-                  <div className="h-px flex-1 bg-border/50" />
-                </div>
-                <p className="text-xl md:text-2xl font-serif italic text-muted-foreground leading-relaxed">
-                  This narrative features {currentStory.photos?.length || 0} visual records captured during this journey.
-                </p>
-              </div>
-
-              {/* Main Article */}
-              <motion.article
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.8 }}
-                className="milkdown-article"
-              >
-                <MilkdownViewer content={currentStory.content || ''} />
-              </motion.article>
-
-              {/* Large Featured Photo */}
-              {currentStory.photos && currentStory.photos.length > 1 && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
-                  viewport={{ once: true }}
-                  className="my-32 -mx-6 md:-mx-24 lg:-mx-48 aspect-[21/9] overflow-hidden bg-muted"
-                >
-                  <img
-                    src={getPhotoUrl(currentStory.photos[1])}
-                    alt="Featured visual"
-                    className="w-full h-full object-cover"
-                  />
-                </motion.div>
-              )}
-
-              {/* Final Gallery */}
-              {currentStory.photos && currentStory.photos.length > 0 && (
-                <section className="mt-40">
-                  <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-16">
-                    <div className="space-y-4">
-                      <span className="text-[10px] font-mono text-primary uppercase tracking-[0.4em]">Visual Archive</span>
-                      <h2 className="text-4xl md:text-5xl font-serif font-light tracking-tight">Gallery</h2>
-                    </div>
-                    <p className="text-sm text-muted-foreground font-serif italic max-w-xs">
-                      A complete collection of moments documented in this narrative.
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-8">
-                    {currentStory.photos.map((photo, index) => (
-                      <motion.div
-                        key={photo.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        viewport={{ once: true }}
-                        transition={{ delay: index * 0.1 }}
-                        className={`relative group cursor-pointer overflow-hidden bg-muted
-                          ${index % 5 === 0 ? 'md:col-span-2 aspect-[16/10]' : 'aspect-square'}
-                        `}
-                        onClick={() => setPreviewPhotoIndex(index)}
-                      >
-                        <img
-                          src={getPhotoUrl(photo, true)}
-                          alt={photo.title}
-                          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                        />
-                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <MousePointer2 className="w-6 h-6 text-white" />
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {/* Footer */}
-              <div className="mt-40 pt-24 border-t border-border/50 text-center">
-                <button
-                  onClick={() => setShowPreview(false)}
-                  className="group inline-flex flex-col items-center gap-6"
-                >
-                  <span className="text-[10px] font-bold uppercase tracking-[0.5em] text-muted-foreground group-hover:text-primary transition-colors">
-                    返回编辑
-                  </span>
-                  <span className="text-4xl md:text-6xl font-serif font-light italic tracking-tight hover:text-primary transition-colors">
-                    Close Preview
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Photo Lightbox */}
-          {previewPhotoIndex !== null && currentStory.photos?.[previewPhotoIndex] && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[120] bg-black/98 flex items-center justify-center"
-              onClick={() => setPreviewPhotoIndex(null)}
-            >
-              <button
-                onClick={() => setPreviewPhotoIndex(null)}
-                className="absolute top-12 right-12 p-2 text-white/30 hover:text-white transition-colors z-10"
-              >
-                <X className="w-8 h-8" />
-              </button>
-
-              {currentStory.photos.length > 1 && (
-                <>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handlePrevPhoto() }}
-                    className="absolute left-8 top-1/2 -translate-y-1/2 p-4 text-white/20 hover:text-white transition-colors z-10"
-                  >
-                    <ChevronLeft className="w-12 h-12" />
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleNextPhoto() }}
-                    className="absolute right-8 top-1/2 -translate-y-1/2 p-4 text-white/20 hover:text-white transition-colors z-10"
-                  >
-                    <ChevronRight className="w-12 h-12" />
-                  </button>
-                </>
-              )}
-
-              <div className="w-full h-full flex items-center justify-center p-6 md:p-24" onClick={(e) => e.stopPropagation()}>
-                <motion.img
-                  key={previewPhotoIndex}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  src={getPhotoUrl(currentStory.photos[previewPhotoIndex])}
-                  alt={currentStory.photos[previewPhotoIndex].title}
-                  className="max-w-full max-h-full object-contain"
-                />
-              </div>
-
-              <div className="absolute bottom-12 left-12 flex flex-col gap-2">
-                <div className="text-white font-serif text-2xl tracking-tight">
-                  {currentStory.photos[previewPhotoIndex].title || 'Untitled Record'}
-                </div>
-                <div className="text-white/40 font-mono text-[10px] uppercase tracking-widest">
-                  {previewPhotoIndex + 1} of {currentStory.photos.length}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </motion.div>
+        <StoryPreviewModal
+          story={currentStory}
+          cdnDomain={settings?.cdn_domain}
+          previewPhotoIndex={previewPhotoIndex}
+          onClose={() => setShowPreview(false)}
+          onPhotoClick={setPreviewPhotoIndex}
+          onPhotoClose={() => setPreviewPhotoIndex(null)}
+          onPrevPhoto={handlePrevPhoto}
+          onNextPhoto={handleNextPhoto}
+          t={t}
+        />
       )}
     </div>
   )

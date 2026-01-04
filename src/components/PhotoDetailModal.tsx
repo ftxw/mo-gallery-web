@@ -47,6 +47,7 @@ interface PhotoDetailModalProps {
   totalPhotos?: number // Total count of all photos (for display)
   hasMore?: boolean // Whether there are more photos to load
   onLoadMore?: () => Promise<void> // Callback to load more photos
+  hideStoryTab?: boolean // Hide the story tab (useful when viewing from story detail page)
 }
 
 export function PhotoDetailModal({
@@ -58,11 +59,12 @@ export function PhotoDetailModal({
   totalPhotos,
   hasMore = false,
   onLoadMore,
+  hideStoryTab = false,
 }: PhotoDetailModalProps) {
   const { settings } = useSettings()
   const { t, locale } = useLanguage()
   const { user } = useAuth()
-  const [activeTab, setActiveTab] = useState<TabType>('story')
+  const [activeTab, setActiveTab] = useState<TabType>(hideStoryTab ? 'info' : 'story')
   const [dominantColors, setDominantColors] = useState<string[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -188,7 +190,7 @@ export function PhotoDetailModal({
 
   // Fetch story data - only when modal opens or photo changes to a different story
   useEffect(() => {
-    if (!photo || !isOpen) return
+    if (!photo || !isOpen || hideStoryTab) return
     
     // If photo is within the cached story, no need to refetch
     if (storyCache && isPhotoInCachedStory(photo.id)) {
@@ -271,7 +273,7 @@ export function PhotoDetailModal({
 
   useEffect(() => {
     if (photo && isOpen) {
-      if (photo.dominantColors && photo.dominantColors.length > 0) {
+      if (Array.isArray(photo.dominantColors) && photo.dominantColors.length > 0) {
         setDominantColors(photo.dominantColors)
       } else {
         setDominantColors([])
@@ -511,23 +513,25 @@ export function PhotoDetailModal({
               </button>
               
               {/* Tabs */}
-              <div className="flex border-b border-border">
-                {[
-                  { id: 'story', icon: BookOpen, label: t('gallery.story') },
-                  { id: 'info', icon: Info, label: t('gallery.info') }
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id as TabType)}
-                    className={`flex-1 flex items-center justify-center gap-2 py-5 text-ui-xs font-bold uppercase tracking-[0.2em] transition-all
-                      ${activeTab === tab.id ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:bg-muted/30'}
-                    `}
-                  >
-                    <tab.icon className="w-3.5 h-3.5" />
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+              {!hideStoryTab && (
+                <div className="flex border-b border-border">
+                  {[
+                    { id: 'story', icon: BookOpen, label: t('gallery.story') },
+                    { id: 'info', icon: Info, label: t('gallery.info') }
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id as TabType)}
+                      className={`flex-1 flex items-center justify-center gap-2 py-5 text-ui-xs font-bold uppercase tracking-[0.2em] transition-all
+                        ${activeTab === tab.id ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:bg-muted/30'}
+                      `}
+                    >
+                      <tab.icon className="w-3.5 h-3.5" />
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Content Area */}
               <div className="flex-1 overflow-hidden relative">

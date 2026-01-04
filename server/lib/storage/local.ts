@@ -4,7 +4,7 @@
  * Stores images on the local filesystem
  */
 
-import { writeFile, unlink, mkdir } from 'fs/promises'
+import { writeFile, unlink, mkdir, readFile, rename, readdir, stat } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
 import {
@@ -12,7 +12,11 @@ import {
   StorageConfig,
   UploadFileInput,
   UploadResult,
+  MoveResult,
   StorageError,
+  ListOptions,
+  ListResult,
+  StorageFile,
 } from './types'
 
 export class LocalStorageProvider implements StorageProvider {
@@ -98,6 +102,90 @@ export class LocalStorageProvider implements StorageProvider {
     } catch (error) {
       console.error('Failed to delete local file:', error)
       // Don't throw - deletion is best-effort
+    }
+  }
+
+  async download(key: string): Promise<Buffer> {
+    const filePath = path.join(this.basePath, key)
+    return readFile(filePath)
+  }
+
+  async move(oldKey: string, newPath: string, thumbnailKey?: string): Promise<MoveResult> {
+    const filename = path.basename(oldKey)
+    const newKey = newPath ? `${newPath}/${filename}` : filename
+
+    // Ensure new directory exists
+    const newDir = path.join(this.basePath, newPath)
+    if (!existsSync(newDir)) {
+      await mkdir(newDir, { recursive: true })
+    }
+
+    // Move original file
+    const oldFilePath = path.join(this.basePath, oldKey)
+    const newFilePath = path.join(this.basePath, newKey)
+    await rename(oldFilePath, newFilePath)
+
+    const result: MoveResult = {
+      newKey,
+      newUrl: this.getUrl(filename, newPath),
+    }
+
+    // Move thumbnail if exists
+    if (thumbnailKey) {
+      const thumbFilename = path.basename(thumbnailKey)
+      const newThumbKey = newPath ? `${newPath}/${thumbFilename}` : thumbFilename
+      const oldThumbPath = path.join(this.basePath, thumbnailKey)
+      const newThumbPath = path.join(this.basePath, newThumbKey)
+      
+      if (existsSync(oldThumbPath)) {
+        await rename(oldThumbPath, newThumbPath)
+        result.newThumbnailKey = newThumbKey
+        result.newThumbnailUrl = this.getUrl(thumbFilename, newPath)
+      }
+    }
+
+    return result
+  }
+
+  async list(options?: ListOptions): Promise<ListResult> {
+    const files: StorageFile[] = []
+    const searchPath = options?.prefix
+      ? path.join(this.basePath, options.prefix)
+      : this.basePath
+
+    await this.listRecursive(searchPath, '', files)
+
+    const start = options?.cursor ? parseInt(options.cursor) : 0
+    const limit = options?.limit || 1000
+    const slice = files.slice(start, start + limit)
+
+    return {
+      files: slice,
+      cursor: start + limit < files.length ? String(start + limit) : undefined,
+      hasMore: start + limit < files.length,
+    }
+  }
+
+  private async listRecursive(basePath: string, relativePath: string, files: StorageFile[]): Promise<void> {
+    const fullPath = path.join(basePath, relativePath)
+    if (!existsSync(fullPath)) return
+
+    const entries = await readdir(fullPath, { withFileTypes: true })
+
+    for (const entry of entries) {
+      const entryRelPath = relativePath ? `${relativePath}/${entry.name}` : entry.name
+
+      if (entry.isDirectory()) {
+        await this.listRecursive(basePath, entryRelPath, files)
+      } else {
+        const fileStat = await stat(path.join(fullPath, entry.name))
+        files.push({
+          key: entryRelPath,
+          size: fileStat.size,
+          lastModified: fileStat.mtime,
+          url: this.getUrl(entry.name, relativePath),
+        })
+      }
     }
   }
 

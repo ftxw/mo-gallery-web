@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Trash2, AlertTriangle, Loader2, BookOpen, X, ImageIcon, Image } from 'lucide-react'
+import { Trash2, AlertTriangle, Loader2, BookOpen, X, ImageIcon, Image, ExternalLink } from 'lucide-react'
 import { type PhotoWithStories } from '@/lib/api'
 
 interface DeleteConfirmDialogProps {
@@ -35,6 +36,7 @@ export function DeleteConfirmDialog({
   isLoading = false,
   photosWithStories = [],
 }: DeleteConfirmDialogProps) {
+  const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false)
 
   const hasBlockingStories = photosWithStories.length > 0
@@ -123,13 +125,21 @@ export function DeleteConfirmDialog({
                         {t('admin.associated_stories')} ({uniqueStories.length})
                       </p>
                       <ul className="space-y-2 max-h-32 overflow-y-auto">
-                        {uniqueStories.map(story => (
-                          <li key={story.id} className="flex items-center gap-2 text-sm">
-                            <BookOpen className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                            <span className="truncate">{story.title || t('story.untitled')}</span>
-                          </li>
-                        ))}
-                      </ul>
+                          {uniqueStories.map(story => (
+                            <li key={story.id}>
+                              <button
+                                onClick={() => {
+                                  router.push(`/admin/logs?editStory=${story.id}`)
+                                }}
+                                className="w-full flex items-center gap-2 text-sm text-left hover:text-primary transition-colors group"
+                              >
+                                <BookOpen className="w-3.5 h-3.5 text-amber-500 shrink-0 group-hover:text-primary transition-colors" />
+                                <span className="truncate flex-1">{story.title || t('story.untitled')}</span>
+                                <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
                     </div>
 
                     <p className="text-xs text-muted-foreground leading-relaxed">

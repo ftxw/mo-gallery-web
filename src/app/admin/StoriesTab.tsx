@@ -110,6 +110,49 @@ export function StoriesTab({ token, t, notify, editStoryId, editFromDraft, onDra
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
   const AUTO_SAVE_DELAY = 2000
+
+  // Photo order persistence key
+  const photoOrderKey = 'story_photo_order'
+
+  // Helper to get saved photo order from localStorage
+  function getSavedPhotoOrder(storyId: string): Record<string, string[]> {
+    if (typeof window === 'undefined') return {}
+    try {
+      const stored = localStorage.getItem(photoOrderKey)
+      return stored ? JSON.parse(stored) : {}
+    } catch {
+      return {}
+    }
+  }
+
+  // Helper to save photo order to localStorage
+  function savePhotoOrder(storyId: string, photoIds: string[]) {
+    if (typeof window === 'undefined') return
+    try {
+      const all = getSavedPhotoOrder(storyId)
+      all[storyId] = photoIds
+      localStorage.setItem(photoOrderKey, JSON.stringify(all))
+    } catch (e) {
+      console.error('Failed to save photo order:', e)
+    }
+  }
+
+  // Apply saved order to stories list
+  function applySavedOrder(stories: StoryDto[]): StoryDto[] {
+    const photoOrders = getSavedPhotoOrder('')
+    return stories.map(story => {
+      const order = photoOrders[story.id]
+      if (order && story.photos) {
+        const photoMap = new Map(story.photos.map(p => [p.id, p]))
+        const sortedPhotos = order.map((id: string) => photoMap.get(id)).filter((p): p is PhotoDto => !!p)
+        // Only apply if all ordered photos exist
+        if (sortedPhotos.length === story.photos.length) {
+          return { ...story, photos: sortedPhotos }
+        }
+      }
+      return story
+    })
+  }
   
   // Track initial state for dirty checking
   const [isDirty, setIsDirty] = useState(false)
@@ -373,7 +416,8 @@ export function StoriesTab({ token, t, notify, editStoryId, editFromDraft, onDra
     try {
       setLoading(true)
       const data = await getAdminStories(token)
-      setStories(data)
+      // Apply saved photo order from localStorage
+      setStories(applySavedOrder(data))
     } catch (err) {
       console.error('Failed to load stories:', err)
       notify(t('story.load_failed'), 'error')
@@ -540,7 +584,7 @@ export function StoriesTab({ token, t, notify, editStoryId, editFromDraft, onDra
       setSaving(true)
       const isNew = !stories.find((s) => s.id === currentStory.id)
       const photoIds = currentStory.photos?.map(p => p.id) || []
-      
+
       if (isNew) {
         await createStory(token, {
           title: currentStory.title,
@@ -566,12 +610,14 @@ export function StoriesTab({ token, t, notify, editStoryId, editFromDraft, onDra
         if (photoIds.length > 0) {
           await reorderStoryPhotos(token, currentStory.id, photoIds)
         }
+        // Persist photo order to localStorage
+        savePhotoOrder(currentStory.id, photoIds)
         notify(t('story.updated'), 'success')
       }
       // Clear draft after successful save
       const isNewStory = !stories.find((s) => s.id === currentStory.id)
       await clearDraft(isNewStory ? undefined : currentStory.id)
-      
+
       pendingImages.forEach(p => URL.revokeObjectURL(p.previewUrl))
       setPendingImages([])
       setStoryEditMode('list')

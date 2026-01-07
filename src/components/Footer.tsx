@@ -141,10 +141,6 @@ export default function Footer() {
                 </svg>
                 GitHub
               </a>
-              <span className="text-border">|</span>
-              <p className="font-sans text-xs text-muted-foreground">
-                {t('footer.designed_by')}
-              </p>
             </div>
           </div>
         </div>

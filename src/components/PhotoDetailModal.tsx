@@ -79,7 +79,7 @@ export function PhotoDetailModal({
   // Thumbnails visibility state
   const [showThumbnails, setShowThumbnails] = useState(true)
   const thumbnailsScrollRef = useRef<HTMLDivElement>(null)
-  
+
   // Mobile panel state
   const [mobilePanelExpanded, setMobilePanelExpanded] = useState(false)
   
@@ -91,7 +91,6 @@ export function PhotoDetailModal({
     ? allPhotos.findIndex(p => p.id === photo.id)
     : -1
   const hasPrevious = currentPhotoIndex > 0
-  // Can go next if there are more loaded photos OR if there are more to load
   const hasNextLoaded = currentPhotoIndex >= 0 && currentPhotoIndex < allPhotos.length - 1
   const canLoadMore = hasMore && onLoadMore
   const hasNext = hasNextLoaded || canLoadMore
@@ -108,12 +107,10 @@ export function PhotoDetailModal({
 
   const handleNext = async () => {
     if (!onPhotoChange) return
-    
+
     if (hasNextLoaded) {
-      // Navigate to next loaded photo
       onPhotoChange(allPhotos[currentPhotoIndex + 1])
     } else if (canLoadMore) {
-      // Mark that we want to go to next photo after loading
       pendingNextRef.current = true
       setIsLoadingMore(true)
       try {
@@ -160,11 +157,11 @@ export function PhotoDetailModal({
 
   const handleTouchEnd = () => {
     if (!touchStartRef.current || !touchMoveRef.current) return
-    
+
     const deltaX = touchMoveRef.current.x - touchStartRef.current.x
     const deltaY = touchMoveRef.current.y - touchStartRef.current.y
     const minSwipeDistance = 50
-    
+
     if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > minSwipeDistance) {
       if (deltaX > 0 && hasPrevious) {
         handlePrevious()
@@ -172,7 +169,7 @@ export function PhotoDetailModal({
         handleNext()
       }
     }
-    
+
     touchStartRef.current = null
     touchMoveRef.current = null
   }
@@ -436,19 +433,19 @@ export function PhotoDetailModal({
                     className="hidden md:block relative bg-black/10 backdrop-blur-md border-t border-white/5 shrink-0 z-30 overflow-hidden"
                   >
                      <div
-                      ref={thumbnailsScrollRef}
-                      className="flex items-center gap-2 p-3 overflow-x-auto custom-scrollbar scroll-smooth h-24"
-                    >
-                      {allPhotos.map((p, idx) => (
-                        <button
-                          key={p.id}
-                          onClick={() => onPhotoChange?.(p)}
-                          className={`relative flex-shrink-0 h-full aspect-square rounded overflow-hidden transition-all group/thumb ${
-                            p.id === photo.id
-                              ? 'ring-2 ring-primary scale-95 opacity-100'
-                              : 'opacity-50 hover:opacity-100 hover:scale-105'
-                          }`}
-                        >
+                       ref={thumbnailsScrollRef}
+                       className="flex items-center gap-2 p-3 overflow-x-auto custom-scrollbar scroll-smooth h-24"
+                     >
+                       {allPhotos.map((p, idx) => (
+                         <button
+                           key={p.id}
+                           onClick={() => onPhotoChange?.(p)}
+                           className={`relative flex-shrink-0 h-full aspect-square rounded overflow-hidden transition-all group/thumb ${
+                             p.id === photo.id
+                               ? 'ring-2 ring-primary scale-95 opacity-100'
+                               : 'opacity-50 hover:opacity-100 hover:scale-105'
+                           }`}
+                         >
                            <img
                             src={resolveAssetUrl(p.thumbnailUrl || p.url, settings?.cdn_domain)}
                             alt={p.title}
@@ -553,7 +550,7 @@ export function PhotoDetailModal({
                               {t('gallery.featured')}
                             </span>
                           )}
-                          {photo.category.split(',').map(cat => (
+                          {photo.category && photo.category.split(',').filter(cat => cat.trim()).map(cat => (
                             <span key={cat} className="px-3 py-1 bg-primary/5 text-primary text-ui-micro font-bold uppercase tracking-widest border border-primary/20">
                               {cat}
                             </span>

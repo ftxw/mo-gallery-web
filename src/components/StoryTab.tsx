@@ -189,22 +189,7 @@ export function StoryTab({
     }
   }, [currentPhoto.id, story?.photos])
 
-  useEffect(() => {
-    if (!story?.photos || story.photos.length <= 1 || !onPhotoChange) return
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft' && currentPhotoIndex > 0) {
-        e.preventDefault()
-        onPhotoChange(story.photos[currentPhotoIndex - 1])
-      } else if (e.key === 'ArrowRight' && currentPhotoIndex < story.photos.length - 1) {
-        e.preventDefault()
-        onPhotoChange(story.photos[currentPhotoIndex + 1])
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [story?.photos, currentPhotoIndex, onPhotoChange])
+  // Remove keyboard navigation - only use StoryTab's own navigation buttons
 
   // Seamless refresh comments without loading state
   async function refreshComments() {
@@ -309,9 +294,14 @@ export function StoryTab({
               <div className="h-px w-6 bg-primary/30" />
               <span className="text-ui-xs font-bold uppercase tracking-[0.3em] text-primary/60">Journal</span>
             </div>
-            <h3 className="font-serif text-2xl md:text-3xl leading-[1.1] text-foreground tracking-tight">
+            <a
+              href={`/story/${story.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-serif text-2xl md:text-3xl leading-[1.1] text-foreground tracking-tight hover:text-primary transition-colors"
+            >
               {story.title}
-            </h3>
+            </a>
             <div className="flex items-center gap-4 text-ui-micro font-mono uppercase tracking-widest text-muted-foreground/60">
               {new Date(story.createdAt).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en-US', {
                 year: 'numeric',

@@ -39,7 +39,6 @@ export const dictionaries = {
       navigation: '导航',
       social: '社交媒体',
       rights: '版权所有。',
-      designed_by: '由 GEMINI 设计',
     },
     home: {
       hero_vis: '{SITE_AUTHOR}',
@@ -578,7 +577,6 @@ export const dictionaries = {
       navigation: 'NAVIGATION',
       social: 'SOCIAL',
       rights: 'ALL RIGHTS RESERVED.',
-      designed_by: 'DESIGNED WITH GEMINI',
     },
     home: {
       hero_vis: '{SITE_AUTHOR}',

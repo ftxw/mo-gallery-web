@@ -25,7 +25,7 @@ export default function GalleryPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('masonry')
   const [grayscale, setGrayscale] = useState(true)
-  const [immersive, setImmersive] = useState(false)
+  const [immersive, setImmersive] = useState(true)
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [page, setPage] = useState(1)
   const [meta, setMeta] = useState<PhotoPaginationMeta | null>(null)

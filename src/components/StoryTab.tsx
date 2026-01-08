@@ -11,6 +11,14 @@ import { useSettings } from '@/contexts/SettingsContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { Toast, type Notification } from '@/components/Toast'
 
+const WalineCommentsWrapper = dynamic(
+  () => import('./WalineComments').then(mod => mod.WalineComments),
+  {
+    ssr: false,
+    loading: () => <div className="space-y-5 animate-pulse"><div className="h-4 bg-muted rounded-none w-1/4"></div><div className="h-4 bg-muted rounded-none w-full"></div></div>
+  }
+)
+
 // Dynamically import MilkdownViewer to avoid SSR issues
 const MilkdownViewer = dynamic(
   () => import('@/components/MilkdownViewer'),
@@ -78,6 +86,12 @@ export function StoryTab({
   // Use linuxdo_only from cached settings
   const linuxdoOnly = settings?.linuxdo_only ?? false
   const settingsLoaded = !isLoading
+  
+  // Waline configuration
+  const commentsStorage = settings?.comments_storage?.toUpperCase() || ''
+  const isWaline = commentsStorage === 'LEANCLOUD'
+  const walineServerUrl = settings?.waline_server_url || ''
+  
   // Check if user is logged in via Linux DO
   const isLinuxDoUser = user?.oauthProvider === 'linuxdo'
   // Check if user is admin
@@ -379,11 +393,26 @@ export function StoryTab({
           <div className="flex items-center gap-3">
             <MessageSquare className="w-4 h-4 text-primary/40" />
             <h3 className="text-ui-xs font-bold tracking-[0.3em] uppercase text-primary/80">
-              {t('gallery.comments')} {comments.length > 0 && `(${comments.length})`}
+              {t('gallery.comments')} {!isWaline && comments.length > 0 && `(${comments.length})`}
             </h3>
           </div>
         </div>
 
+        {/* Waline Comments */}
+        {isWaline ? (
+          walineServerUrl ? (
+            <WalineCommentsWrapper
+              serverURL={walineServerUrl}
+              path={story ? `/stories/${story.id}` : `/photos/${photoId}`}
+              lang={locale === 'zh' ? 'zh-CN' : 'en'}
+            />
+          ) : (
+            <div className="text-center py-8 bg-muted/5 border border-border/50">
+              <p className="text-xs font-serif italic text-muted-foreground/60">Waline server not configured</p>
+            </div>
+          )
+        ) : (
+        <>
         {/* Comment Form - Now at the top */}
         <div className="relative group mb-10">
           <div className="absolute -inset-3 bg-muted/5 opacity-0 group-focus-within:opacity-100 transition-opacity pointer-events-none" />
@@ -561,6 +590,8 @@ export function StoryTab({
               ))}
             </AnimatePresence>
           </motion.div>
+        )}
+        </>
         )}
       </div>
     </div>

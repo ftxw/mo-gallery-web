@@ -231,6 +231,8 @@ export interface PublicSettingsDto {
   site_title: string
   cdn_domain: string
   linuxdo_only: boolean
+  comments_storage?: string
+  waline_server_url?: string
 }
 
 export interface LoginRequest {

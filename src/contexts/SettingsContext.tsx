@@ -58,9 +58,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setCachedSettings(data)
     } catch (error) {
       console.error('Failed to load settings:', error)
-      setSettings({ site_title: 'MO GALLERY', cdn_domain: '', linuxdo_only: false })
-    } finally {
-      setIsLoading(false)
+      setSettings({
+        site_title: 'MO GALLERY',
+        cdn_domain: '',
+        linuxdo_only: false,
+        comments_storage: '',
+        waline_server_url: '',
+      })
     }
   }
 

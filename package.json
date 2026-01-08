@@ -42,6 +42,8 @@
     "@milkdown/utils": "^7.17.3",
     "@octokit/rest": "^22.0.1",
     "@prisma/client": "^6.4.1",
+    "@waline/client": "^3.8.0",
+    "@waline/vercel": "^1.34.2",
     "bcryptjs": "^3.0.3",
     "browser-image-compression": "^2.0.2",
     "exifreader": "^4.33.1",

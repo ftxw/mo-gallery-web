@@ -7,10 +7,10 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_BUILD_ID: BUILD_ID,
   },
-  reactStrictMode: false, // 禁用 Strict Mode（仅开发环境有影响）
+  reactStrictMode: false,
   reactCompiler: true,
   output: "standalone",
-  serverExternalPackages: ["sharp"],
+  serverExternalPackages: ["sharp", "@waline/vercel"],
   images: {
     remotePatterns: [
       {

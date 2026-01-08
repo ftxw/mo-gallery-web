@@ -10,6 +10,7 @@ import blogs from './blogs'
 import albums from './albums'
 import friends from './friends'
 import storage from './storage'
+import { walineHandler } from './waline'
 
 const route = new Hono()
 
@@ -42,5 +43,9 @@ route.route('/', friends)
 route.route('/', storage)
 route.route('/settings', settings)
 route.route('/admin/settings', settings)
+
+// Waline comments API (when COMMENTS_STORAGE=LEANCLOUD)
+route.all('/waline/*', walineHandler)
+route.all('/api/waline/*', walineHandler)
 
 export default route

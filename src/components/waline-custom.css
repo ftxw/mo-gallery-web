@@ -1,0 +1,194 @@
+.waline-container {
+  --waline-theme-color: var(--primary);
+  --waline-bg-color: transparent;
+  --waline-text-color: var(--foreground);
+  --waline-border-color: var(--border);
+  --waline-secondary-bg-color: transparent;
+  --waline-secondary-text-color: var(--muted-foreground);
+  --waline-info-color: var(--muted-foreground);
+  --waline-border-radius: 0;
+  --waline-box-shadow: none;
+  --waline-avatar-size: 40px;
+}
+
+.waline-container .wl-comment {
+  padding: 1.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.waline-container .wl-avatar {
+  border-radius: 50%;
+  width: 40px !important;
+  height: 40px !important;
+}
+
+.waline-container .wl-input,
+.waline-container .wl-editor {
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  padding: 0.75rem 0 !important;
+  font-family: var(--font-serif);
+  font-size: 0.875rem;
+  color: var(--foreground) !important;
+}
+
+.waline-container .wl-input:focus,
+.waline-container .wl-editor:focus {
+  border-bottom-color: var(--primary) !important;
+  outline: none;
+}
+
+.waline-container .wl-nick {
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  font-family: var(--font-serif);
+  font-size: 0.875rem;
+}
+
+.waline-container .wl-btn {
+  background: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0.75rem 1.5rem !important;
+  font-size: 0.75rem !important;
+  font-weight: bold !important;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  transition: opacity 0.2s;
+}
+
+.waline-container .wl-btn:hover {
+  opacity: 0.9;
+}
+
+.waline-container .wl-content {
+  font-family: var(--font-serif);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--foreground);
+}
+
+.waline-container .wl-time {
+  font-size: 0.625rem !important;
+  color: var(--muted-foreground) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.waline-container .wl-count {
+  font-size: 0.75rem !important;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--primary);
+}
+
+.waline-container .wl-label {
+  font-size: 0.625rem !important;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--muted-foreground);
+}
+
+.waline-container .wl-header {
+  gap: 1rem;
+}
+
+.waline-container .wl-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.waline-container .wl-sort {
+  font-size: 0.75rem !important;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted-foreground);
+}
+
+.waline-container .wl-sort:hover {
+  color: var(--primary) !important;
+}
+
+.waline-container .wl-active {
+  color: var(--primary) !important;
+}
+
+.waline-container .wl-reply {
+  font-size: 0.75rem !important;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted-foreground) !important;
+}
+
+.waline-container .wl-reply:hover {
+  color: var(--primary) !important;
+}
+
+.waline-container .wl-action {
+  color: var(--muted-foreground) !important;
+}
+
+.waline-container .wl-action:hover {
+  color: var(--primary) !important;
+}
+
+.waline-container .wl-pagination {
+  margin-top: 2rem;
+}
+
+.waline-container .wl-page {
+  font-size: 0.75rem !important;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted-foreground);
+  padding: 0.5rem 0.75rem;
+}
+
+.waline-container .wl-page:hover {
+  color: var(--primary) !important;
+}
+
+.waline-container .wl-current {
+  color: var(--primary-foreground) !important;
+  background: var(--primary) !important;
+}
+
+.waline-container .wl-quote {
+  border-left: 2px solid var(--border);
+  margin-left: 1rem;
+  padding-left: 1rem;
+}
+
+.waline-container .wl-emoji {
+  font-size: 1.25rem;
+}
+
+.waline-container .wl-power {
+  font-size: 0.625rem !important;
+  color: var(--muted-foreground) !important;
+}
+
+@media (max-width: 640px) {
+  .waline-container .wl-comment {
+    padding: 1rem 0;
+  }
+
+  .waline-container .wl-avatar {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .waline-container .wl-content {
+    font-size: 0.8125rem;
+  }
+}

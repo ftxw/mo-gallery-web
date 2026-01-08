@@ -9,10 +9,18 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useSettings } from '@/contexts/SettingsContext'
 import { Toast, type Notification } from '@/components/Toast'
+import dynamic from 'next/dynamic'
+
+const WalineCommentsWrapper = dynamic(
+  () => import('./WalineComments').then(mod => mod.WalineComments),
+  { 
+    ssr: false, 
+    loading: () => <div className="space-y-8 animate-pulse"><div className="space-y-3"><div className="h-4 bg-muted rounded-none w-1/4"></div><div className="h-4 bg-muted rounded-none w-full"></div></div></div> }
+)
 
 interface StoryCommentsProps {
   storyId: string
-  targetPhotoId: string // The photo ID to attach new comments to (e.g., cover photo)
+  targetPhotoId: string
 }
 
 export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
@@ -37,11 +45,16 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
   const isAdmin = user?.isAdmin === true
   const canComment = !linuxdoOnly || isLinuxDoUser || isAdmin
 
-  useEffect(() => {
-    fetchComments()
-  }, [storyId])
+  const commentsStorage = settings?.comments_storage?.toUpperCase() || ''
+  const isWaline = commentsStorage === 'LEANCLOUD'
+  const walineServerUrl = settings?.waline_server_url || ''
 
-  // Auto-fill author name for Linux DO users and admin users
+  useEffect(() => {
+    if (!isWaline) {
+      fetchComments()
+    }
+  }, [storyId, isWaline])
+
   useEffect(() => {
     if ((isLinuxDoUser || isAdmin) && user?.username && !formData.author) {
       setFormData(prev => ({ ...prev, author: user.username }))
@@ -53,7 +66,6 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
       setLoading(true)
       setError(null)
       const data = await getStoryComments(storyId)
-      // Sort by newest first
       data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       setComments(data)
     } catch (err) {
@@ -64,12 +76,9 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
     }
   }
 
-  // Seamless refresh comments without loading state
   async function refreshComments() {
     try {
-      // Don't set loading to avoid flickering
       const data = await getStoryComments(storyId)
-      // Sort by newest first
       data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       setComments(data)
     } catch (err) {
@@ -108,7 +117,6 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
         notify(t('gallery.comment_pending'), 'info')
       }
 
-      // Keep author name for Linux DO users and admin users, only clear content
       setFormData(prev => ({
         author: (isLinuxDoUser || isAdmin) && user?.username ? user.username : '',
         email: '',
@@ -123,12 +131,40 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
   }
 
   const handleLoginClick = () => {
-    // Pass current page URL as return URL parameter
     const returnUrl = encodeURIComponent(pathname)
     router.push(`/login?returnUrl=${returnUrl}`)
   }
 
-  if (settingsLoading && loading) return null
+  if (settingsLoading && loading && !isWaline) return null
+
+  if (isWaline) {
+    return (
+      <div className="max-w-screen-md mx-auto mt-32 mb-24 px-6 md:px-0 relative">
+        <Toast notifications={notifications} remove={(id) => setNotifications(prev => prev.filter(n => n.id !== id))} />
+        <div className="pt-16 border-t border-border/50">
+          <div className="flex items-center justify-between mb-12">
+            <div className="flex items-center gap-4">
+              <MessageSquare className="w-5 h-5 text-primary/40" />
+              <h3 className="text-[10px] font-bold tracking-[0.4em] uppercase text-primary/80">
+                {t('gallery.comments')}
+              </h3>
+            </div>
+          </div>
+          {walineServerUrl ? (
+            <WalineCommentsWrapper
+              serverURL={walineServerUrl}
+              path={`/stories/${storyId}`}
+              lang={locale === 'zh' ? 'zh-CN' : 'en'}
+            />
+          ) : (
+            <div className="text-center py-12 bg-muted/5 border border-border/50">
+              <p className="text-xs font-serif italic text-muted-foreground/60">Waline server not configured</p>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-screen-md mx-auto mt-32 mb-24 px-6 md:px-0 relative">
@@ -143,11 +179,9 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
           </div>
         </div>
 
-        {/* Comment Form - Now at the top */}
         <div className="relative group mb-16">
           <div className="absolute -inset-4 bg-muted/5 opacity-0 group-focus-within:opacity-100 transition-opacity pointer-events-none" />
           {!canComment ? (
-            /* Linux DO only mode - show login prompt */
             <div className="text-center py-8 border border-dashed border-border/50">
               <p className="text-xs text-muted-foreground mb-6">
                 {t('gallery.comment_linuxdo_only')}
@@ -182,7 +216,6 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
                     {(linuxdoOnly && isLinuxDoUser) || isAdmin ? t('gallery.comment_username') : t('gallery.comment_email')}
                   </label>
                   {isAdmin && !isLinuxDoUser ? (
-                    /* Show Admin badge for admin users */
                     <div className="flex items-center gap-2 py-3 bg-primary/10 border-b border-primary/30 px-2">
                       <svg className="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/>
@@ -190,7 +223,6 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
                       <span className="text-sm text-primary font-medium">{t('admin.admin')}</span>
                     </div>
                   ) : linuxdoOnly && isLinuxDoUser ? (
-                    /* Show Linux DO user badge instead of email input */
                     <div className="flex items-center gap-2 py-3 bg-[#f8d568]/10 border-b border-[#f8d568]/30 px-2">
                       <svg className="w-4 h-4 text-[#f8d568]" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
@@ -237,7 +269,6 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
           )}
         </div>
 
-        {/* Comments List - Now at the bottom with smooth animations */}
         {loading ? (
           <div className="space-y-8 animate-pulse">
             {[...Array(2)].map((_, i) => (
@@ -269,7 +300,6 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
                   className="relative"
                 >
                   <div className="flex items-start gap-4">
-                    {/* Avatar */}
                     <div className="flex-shrink-0">
                       {comment.avatarUrl ? (
                         <img
@@ -285,7 +315,6 @@ export function StoryComments({ storyId, targetPhotoId }: StoryCommentsProps) {
                         </div>
                       )}
                     </div>
-                    {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-2">
                         <span className="text-xs font-bold text-foreground tracking-tight">

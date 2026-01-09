@@ -386,15 +386,14 @@ export default function Home() {
                     {/* Overlay gradient */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 to-black/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                     
-                    {/* Hover content */}
-                    <div className="absolute inset-0 flex flex-col justify-end p-6 opacity-0 group-hover:opacity-100 transition-all duration-500 translate-y-4 group-hover:translate-y-0">
-                      <span className="text-white/80 text-xs tracking-[0.2em] uppercase mb-2">
-                        {image.category}
-                      </span>
-                      <h3 className="text-white font-serif text-xl">
-                        {image.title}
-                      </h3>
-                    </div>
+                    {/* Hover content - only show if has category */}
+                    {image.category && (
+                      <div className="absolute inset-0 flex flex-col justify-end p-6 opacity-0 group-hover:opacity-100 transition-all duration-500 translate-y-4 group-hover:translate-y-0">
+                        <span className="text-white/80 text-xs tracking-[0.2em] uppercase">
+                          {image.category}
+                        </span>
+                      </div>
+                    )}
                     
                     {/* Corner accent */}
                     <div className="absolute top-4 right-4 w-8 h-8 border-t-2 border-r-2 border-white/0 group-hover:border-white/60 transition-all duration-500 rounded-tr-lg" />
@@ -402,15 +401,14 @@ export default function Home() {
                   </div>
                 </Link>
                 
-                {/* Card info - visible on mobile */}
-                <div className="flex flex-col items-center text-center md:hidden">
-                  <h3 className="font-serif text-xl text-foreground">
-                    {image.title}
-                  </h3>
-                  <span className="mt-2 text-[10px] tracking-[0.2em] text-muted-foreground uppercase">
-                    {image.category}
-                  </span>
-                </div>
+                {/* Card info - visible on mobile, only show category */}
+                {image.category && (
+                  <div className="flex flex-col items-center text-center md:hidden">
+                    <span className="mt-2 text-[10px] tracking-[0.2em] text-muted-foreground uppercase">
+                      {image.category}
+                    </span>
+                  </div>
+                )}
               </motion.div>
             ))
           )}
